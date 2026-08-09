@@ -51,6 +51,13 @@ public sealed class CliApplicationTests
     [InlineData("--stream-vcore", "--get-vcore")]
     [InlineData("--stream-vcore", "--diagnose-vcore")]
     [InlineData("--stream-vcore", "--info")]
+    [InlineData("--stream-telemetry", "--interval-ms", "99")]
+    [InlineData("--stream-telemetry", "--interval-ms", "60001")]
+    [InlineData("--stream-telemetry", "--get-vcore")]
+    [InlineData("--stream-telemetry", "--get-cpu-temperature")]
+    [InlineData("--stream-telemetry", "--stream-vcore")]
+    [InlineData("--stream-telemetry", "--diagnose-vcore")]
+    [InlineData("--stream-telemetry", "--info")]
     [InlineData("--diagnose-vcore", "--info")]
     public void InvalidArgumentsDoNotInitializeHardware(params string[] args)
     {
@@ -69,6 +76,85 @@ public sealed class CliApplicationTests
 
         Assert.NotEqual(0, exitCode);
         Assert.Equal(0, factoryCalls);
+    }
+
+    [Fact]
+    public void ExistingVcoreIntervalValidationKeepsItsErrorContract()
+    {
+        int factoryCalls = 0;
+        StringWriter error = new();
+
+        int exitCode = CliApplication.Run(
+            ["--stream-vcore", "--interval-ms", "49"],
+            () =>
+            {
+                factoryCalls++;
+                return new FakeRyzenController(8, Enumerable.Range(0, 8));
+            },
+            FakePrivilegeChecker.Administrator(),
+            new StringWriter(),
+            error);
+
+        Assert.NotEqual((int)ExitCode.Success, exitCode);
+        Assert.Equal(0, factoryCalls);
+        Assert.Contains(
+            "Vcore sample interval must be a whole number from 50 through " +
+            "60000 milliseconds.",
+            error.ToString());
+        Assert.DoesNotContain("Telemetry stream interval", error.ToString());
+    }
+
+    [Fact]
+    public void ExistingVcoreStreamConflictKeepsItsErrorContract()
+    {
+        int factoryCalls = 0;
+        StringWriter error = new();
+
+        int exitCode = CliApplication.Run(
+            ["--stream-vcore", "--diagnose-vcore"],
+            () =>
+            {
+                factoryCalls++;
+                return new FakeRyzenController(8, Enumerable.Range(0, 8));
+            },
+            FakePrivilegeChecker.Administrator(),
+            new StringWriter(),
+            error);
+
+        Assert.NotEqual((int)ExitCode.Success, exitCode);
+        Assert.Equal(0, factoryCalls);
+        Assert.Contains(
+            "--stream-vcore cannot be combined with --get-vcore or " +
+            "--diagnose-vcore.",
+            error.ToString());
+    }
+
+    [Theory]
+    [InlineData("99")]
+    [InlineData("not-a-number")]
+    public void TelemetryIntervalUsesItsOwnErrorContract(string value)
+    {
+        int factoryCalls = 0;
+        StringWriter error = new();
+
+        int exitCode = CliApplication.Run(
+            ["--stream-telemetry", "--interval-ms", value],
+            () =>
+            {
+                factoryCalls++;
+                return new FakeRyzenController(8, Enumerable.Range(0, 8));
+            },
+            FakePrivilegeChecker.Administrator(),
+            new StringWriter(),
+            error);
+
+        Assert.NotEqual((int)ExitCode.Success, exitCode);
+        Assert.Equal(0, factoryCalls);
+        Assert.Contains(
+            "Telemetry stream interval must be a whole number from 100 through " +
+            "60000 milliseconds.",
+            error.ToString());
+        Assert.DoesNotContain("Vcore sample interval", error.ToString());
     }
 
     [Fact]
@@ -133,7 +219,30 @@ public sealed class CliApplicationTests
     }
 
     [Fact]
-    public void HelpDocumentsBothVcoreReadModes()
+    public void GetCpuTemperatureIsPassedToTheController()
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            GetCpuTemperatureResult = OperationResult<double>.Ok(71.875),
+        };
+        StringWriter output = new();
+
+        int exitCode = CliApplication.Run(
+            ["--get-cpu-temperature"],
+            () => controller,
+            FakePrivilegeChecker.Administrator(),
+            output,
+            new StringWriter());
+
+        Assert.Equal((int)ExitCode.Success, exitCode);
+        Assert.Equal(1, controller.CpuTemperatureReadCount);
+        Assert.Equal(
+            $"Current CPU temperature: 71.875 C.{Environment.NewLine}",
+            output.ToString());
+    }
+
+    [Fact]
+    public void HelpDocumentsVcoreAndTemperatureReadModes()
     {
         StringWriter output = new();
 
@@ -148,6 +257,8 @@ public sealed class CliApplicationTests
         Assert.Contains("--get-vcore", output.ToString());
         Assert.Contains("--stream-vcore", output.ToString());
         Assert.Contains("--diagnose-vcore", output.ToString());
+        Assert.Contains("--get-cpu-temperature", output.ToString());
+        Assert.Contains("--stream-telemetry", output.ToString());
         Assert.Contains("--samples", output.ToString());
         Assert.Contains("--interval-ms", output.ToString());
     }
@@ -180,7 +291,7 @@ public sealed class CliApplicationTests
         using JsonDocument document = JsonDocument.Parse(output.ToString());
         JsonElement root = document.RootElement;
         Assert.Equal(1, root.GetProperty("schemaVersion").GetInt32());
-        Assert.StartsWith("0.3.5", root.GetProperty("toolVersion").GetString());
+        Assert.StartsWith("0.4.0", root.GetProperty("toolVersion").GetString());
         Assert.Equal(1, root.GetProperty("samples").GetArrayLength());
         JsonElement extendedApu = root
             .GetProperty("samples")[0]

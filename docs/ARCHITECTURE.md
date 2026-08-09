@@ -29,7 +29,8 @@ Tests replace `IRyzenController` and `IPrivilegeChecker` with deterministic
 test doubles. This keeps CI isolated from real firmware and drivers.
 
 The hardware adapter exposes capability flags for optional SMU operations,
-including FMax reads and writes and mapped CPU-rail Vcore telemetry.
+including FMax reads and writes, mapped CPU-rail Vcore telemetry, and
+read-only CPU Tctl/Tdie temperature telemetry.
 `CommandRunner` rejects an unsupported operation before issuing its SMU
 command and treats invalid or rejected results as failures.
 
@@ -116,6 +117,34 @@ terminates through the normal failure path, disposes the controller, and
 releases the PawnIO session; the PCI mutex is held only around an individual
 PM-table refresh, SVI read, or diagnostic batch, never between samples.
 
+## Combined CPU telemetry
+
+`--get-cpu-temperature` reads the fixed `THM_CUR_TEMP` SMN register through
+ZenStates-Core's signed PawnIO `AMDFamily17` read-only port. The adapter does
+not call the upstream convenience method because that method can write a
+mutex-timeout diagnostic directly to stdout. Instead, the hardware layer
+returns the raw register value to a pure decoder that applies the range bit,
+legacy product-specific Tctl offsets, sentinel rejection, and a conservative
+plausibility range. All diagnostics remain owned by `CommandRunner` and are
+written to stderr.
+
+`--stream-telemetry` reuses one controller session and emits JSON Lines with
+this schema-1 contract:
+
+```text
+kind, schemaVersion, sequence, elapsedMilliseconds, timestampUtc,
+vcoreVolts, cpuTemperatureCelsius, temperatureSource
+```
+
+`kind` is `telemetry`, `temperatureSource` is `tctl-tdie`, and sequence starts
+at zero. The default cadence is 500 ms and the accepted range is 100 through
+60000 ms. Vcore is read first and temperature second; stdout is not touched
+until both reads succeed, so consumers never receive a half-sample. Either
+failure terminates with exit code 6, while an unsupported mapping returns code
+3 before any JSON. Ctrl+C is a successful cancellation. Scheduling uses the
+same missed-slot policy as the Vcore stream, keeping elapsed milliseconds
+strictly increasing without immediate catch-up records.
+
 ## Core coordinates
 
 The CLI exposes two distinct index spaces:
@@ -180,6 +209,14 @@ driver. PawnIO is different: its signed kernel driver must be installed
 system-wide, while the signed hardware modules loaded into that driver are
 embedded in ZenStates-Core. License and provenance files are external so users
 can inspect them without unpacking the managed executable.
+
+The publish target explicitly restores the renamed
+`ZenStates-Core.LICENSE.txt` after project-reference conflict resolution and
+then verifies all required runtime files. Release packaging additionally
+checks archive membership, excludes ambiguous raw dependency documents,
+compares the embedded ZenStates-Core license hash with the submodule source,
+and verifies that the PawnIO bundle differs from the ordinary self-contained
+package only by the pinned installer.
 
 Release automation produces:
 
