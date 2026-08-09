@@ -140,6 +140,21 @@ internal sealed class ZenStatesRyzenController : IRyzenController
         }
     }
 
+    private bool TryGetCpuTemperatureTelemetry(
+        out CpuTemperatureTelemetry? telemetry) =>
+        CpuTemperatureTelemetry.TryResolve(
+            (uint)_cpu.info.family,
+            out telemetry);
+
+    public bool CanReadCpuTemperature =>
+        TryGetCpuTemperatureTelemetry(out _);
+
+    public string? CpuTemperatureReadUnavailableReason =>
+        TryGetCpuTemperatureTelemetry(out _)
+            ? null
+            : $"CPU temperature telemetry is not mapped for family " +
+              $"0x{(uint)_cpu.info.family:X2}.";
+
     private CpuInformation CreateCpuInformation()
     {
         SystemInfo? systemInfo = _cpu.systemInfo;
@@ -613,6 +628,37 @@ internal sealed class ZenStatesRyzenController : IRyzenController
                 $"Failed to read {selectedLayout.SourceName} telemetry at entry " +
                 $"{selectedLayout.ValueIndex} from PM table " +
                 $"0x{version:X8}: {ex.Message}");
+        }
+    }
+
+    public OperationResult<double> GetCpuTemperature()
+    {
+        if (!TryGetCpuTemperatureTelemetry(
+                out CpuTemperatureTelemetry? telemetry))
+        {
+            return OperationResult<double>.Fail(
+                CpuTemperatureReadUnavailableReason ??
+                "CPU temperature telemetry is unavailable on this CPU.");
+        }
+
+        CpuTemperatureTelemetry selectedTelemetry = telemetry!;
+        uint rawValue = 0;
+        try
+        {
+            if (!_cpu.ReadDwordEx(selectedTelemetry.SmnRegister, ref rawValue))
+            {
+                return OperationResult<double>.Fail(
+                    $"Failed to read SMU {selectedTelemetry.SourceName} temperature " +
+                    $"register 0x{selectedTelemetry.SmnRegister:X8}.");
+            }
+
+            return selectedTelemetry.Decode(rawValue, _cpu.info.cpuName);
+        }
+        catch (Exception ex)
+        {
+            return OperationResult<double>.Fail(
+                $"Failed to read SMU {selectedTelemetry.SourceName} temperature " +
+                $"telemetry: {ex.Message}");
         }
     }
 

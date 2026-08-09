@@ -29,7 +29,8 @@ try {
         @("--get-offsets-terse"),
         @("--get-enabled-cores"),
         @("--get-fmax"),
-        @("--get-vcore")
+        @("--get-vcore"),
+        @("--get-cpu-temperature")
     )
 
     if ($IncludePhysicalTopology) {

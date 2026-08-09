@@ -167,6 +167,16 @@ internal static class CliApplication
                 "Continuously print mapped CPU-core rail telemetry without " +
                 "reinitializing hardware between samples.",
         };
+        Option<bool> getCpuTemperatureOption = new("--get-cpu-temperature")
+        {
+            Description =
+                "Print one mapped CPU Tctl/Tdie temperature sample in degrees Celsius.",
+        };
+        Option<bool> streamTelemetryOption = new("--stream-telemetry")
+        {
+            Description =
+                "Continuously print mapped Vcore and CPU Tctl/Tdie samples as JSON Lines.",
+        };
         Option<bool> diagnoseVcoreOption = new("--diagnose-vcore")
         {
             Description =
@@ -205,32 +215,15 @@ internal static class CliApplication
         Option<string?> intervalMillisecondsOption = new("--interval-ms")
         {
             Description =
-                $"Set the --stream-vcore or --diagnose-vcore interval in milliseconds " +
-                $"({VcoreStreaming.MinimumIntervalMilliseconds} through " +
-                $"{VcoreStreaming.MaximumIntervalMilliseconds}; default " +
-                $"{VcoreStreaming.DefaultIntervalMilliseconds}).",
+                "Set a streaming or diagnostic sampling interval in milliseconds. " +
+                $"--stream-vcore and --diagnose-vcore allow " +
+                $"{VcoreStreaming.MinimumIntervalMilliseconds} through " +
+                $"{VcoreStreaming.MaximumIntervalMilliseconds} (default " +
+                $"{VcoreStreaming.DefaultIntervalMilliseconds}); --stream-telemetry " +
+                $"allows {CpuTelemetryStreaming.MinimumIntervalMilliseconds} through " +
+                $"{CpuTelemetryStreaming.MaximumIntervalMilliseconds} (default " +
+                $"{CpuTelemetryStreaming.DefaultIntervalMilliseconds}).",
         };
-        intervalMillisecondsOption.Validators.Add(result =>
-        {
-            string? rawValue = result.GetValue(intervalMillisecondsOption);
-            if (rawValue is null)
-            {
-                return;
-            }
-
-            if (!int.TryParse(
-                    rawValue,
-                    NumberStyles.None,
-                    CultureInfo.InvariantCulture,
-                    out int value) ||
-                !VcoreStreaming.IsValidInterval(value))
-            {
-                result.AddError(
-                    $"Vcore sample interval must be a whole number from " +
-                    $"{VcoreStreaming.MinimumIntervalMilliseconds} through " +
-                    $"{VcoreStreaming.MaximumIntervalMilliseconds} milliseconds.");
-            }
-        });
         Option<bool> infoOption = new("--info")
         {
             Description =
@@ -253,6 +246,8 @@ internal static class CliApplication
                 getFMaxOption,
                 getVcoreOption,
                 streamVcoreOption,
+                getCpuTemperatureOption,
+                streamTelemetryOption,
                 diagnoseVcoreOption,
                 samplesOption,
                 intervalMillisecondsOption,
@@ -280,9 +275,42 @@ internal static class CliApplication
             }
 
             bool streamVcore = WasSpecified(streamVcoreOption);
+            bool streamTelemetry = WasSpecified(streamTelemetryOption);
             bool diagnoseVcore = WasSpecified(diagnoseVcoreOption);
+            var intervalResult = result.GetResult(intervalMillisecondsOption);
+            if (intervalResult is { Implicit: false } &&
+                intervalResult.Tokens.Count == 1)
+            {
+                bool parsedInterval = int.TryParse(
+                    intervalResult.Tokens[0].Value,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out int interval);
+                if (streamTelemetry &&
+                    (!parsedInterval ||
+                     !CpuTelemetryStreaming.IsValidInterval(interval)))
+                {
+                    result.AddError(
+                        $"Telemetry stream interval must be a whole number from " +
+                        $"{CpuTelemetryStreaming.MinimumIntervalMilliseconds} through " +
+                        $"{CpuTelemetryStreaming.MaximumIntervalMilliseconds} " +
+                        "milliseconds.");
+                }
+                else if (!streamTelemetry &&
+                         (!parsedInterval ||
+                          !VcoreStreaming.IsValidInterval(interval)))
+                {
+                    // Keep the v0.3.5 error contract for the existing Vcore
+                    // stream and diagnostic modes.
+                    result.AddError(
+                        $"Vcore sample interval must be a whole number from " +
+                        $"{VcoreStreaming.MinimumIntervalMilliseconds} through " +
+                        $"{VcoreStreaming.MaximumIntervalMilliseconds} milliseconds.");
+                }
+            }
             if (WasSpecified(intervalMillisecondsOption) &&
                 !streamVcore &&
+                !streamTelemetry &&
                 !diagnoseVcore)
             {
                 result.AddError(
@@ -295,11 +323,18 @@ internal static class CliApplication
             }
 
             if (streamVcore &&
-                (WasSpecified(getVcoreOption) || diagnoseVcore))
+                (WasSpecified(getVcoreOption) ||
+                 diagnoseVcore))
             {
                 result.AddError(
                     "--stream-vcore cannot be combined with --get-vcore or " +
                     "--diagnose-vcore.");
+            }
+
+            if (streamVcore && streamTelemetry)
+            {
+                result.AddError(
+                    "--stream-vcore and --stream-telemetry cannot be used together.");
             }
 
             if (streamVcore &&
@@ -313,10 +348,31 @@ internal static class CliApplication
                  WasSpecified(getPboScalarOption) ||
                  WasSpecified(setFMaxOption) ||
                  WasSpecified(getFMaxOption) ||
+                 WasSpecified(getCpuTemperatureOption) ||
                  WasSpecified(infoOption)))
             {
                 result.AddError(
                     "--stream-vcore cannot be combined with another hardware operation.");
+            }
+
+            if (streamTelemetry &&
+                (WasSpecified(offsetOption) ||
+                 WasSpecified(disableCoresOption) ||
+                 WasSpecified(enableAllCoresOption) ||
+                 WasSpecified(getOffsetsTerseOption) ||
+                 WasSpecified(getPhysicalCoresOption) ||
+                 WasSpecified(getEnabledCoresOption) ||
+                 WasSpecified(setPboScalarOption) ||
+                 WasSpecified(getPboScalarOption) ||
+                 WasSpecified(setFMaxOption) ||
+                 WasSpecified(getFMaxOption) ||
+                 WasSpecified(getVcoreOption) ||
+                 WasSpecified(getCpuTemperatureOption) ||
+                 diagnoseVcore ||
+                 WasSpecified(infoOption)))
+            {
+                result.AddError(
+                    "--stream-telemetry cannot be combined with another hardware operation.");
             }
 
             if (diagnoseVcore &&
@@ -331,6 +387,8 @@ internal static class CliApplication
                  WasSpecified(setFMaxOption) ||
                  WasSpecified(getFMaxOption) ||
                  WasSpecified(getVcoreOption) ||
+                 WasSpecified(getCpuTemperatureOption) ||
+                 streamTelemetry ||
                  WasSpecified(infoOption)))
             {
                 result.AddError(
@@ -375,6 +433,19 @@ internal static class CliApplication
                         : VcoreStreaming.DefaultIntervalMilliseconds;
             }
 
+            int? telemetryStreamIntervalMilliseconds = null;
+            if (parseResult.GetValue(streamTelemetryOption))
+            {
+                telemetryStreamIntervalMilliseconds =
+                    int.TryParse(
+                        parseResult.GetValue(intervalMillisecondsOption),
+                        NumberStyles.None,
+                        CultureInfo.InvariantCulture,
+                        out int interval)
+                        ? interval
+                        : CpuTelemetryStreaming.DefaultIntervalMilliseconds;
+            }
+
             CliRequest request = new(
                 offsetSpecification,
                 disabledCores,
@@ -397,6 +468,10 @@ internal static class CliApplication
                 parseResult.GetValue(infoOption))
             {
                 DiagnoseVcore = parseResult.GetValue(diagnoseVcoreOption),
+                GetCpuTemperature =
+                    parseResult.GetValue(getCpuTemperatureOption),
+                TelemetryStreamIntervalMilliseconds =
+                    telemetryStreamIntervalMilliseconds,
                 VcoreDiagnosticSampleCount = int.TryParse(
                     parseResult.GetValue(samplesOption),
                     NumberStyles.None,

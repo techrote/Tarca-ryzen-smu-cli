@@ -330,9 +330,29 @@ internal sealed class CommandRunner
                 $"{result.Value.ToString("F6", CultureInfo.InvariantCulture)} V.");
         }
 
+        if (request.GetCpuTemperature)
+        {
+            OperationResult<double> result = controller.GetCpuTemperature();
+            if (!result.Success)
+            {
+                _error.WriteLine(result.Error);
+                return (int)ExitCode.OperationFailed;
+            }
+
+            _output.WriteLine(
+                $"Current CPU temperature: " +
+                $"{result.Value.ToString("F3", CultureInfo.InvariantCulture)} C.");
+        }
+
         if (request.VcoreStreamIntervalMilliseconds is int streamInterval)
         {
             return StreamVcore(controller, streamInterval);
+        }
+
+        if (request.TelemetryStreamIntervalMilliseconds is
+            int telemetryStreamInterval)
+        {
+            return StreamTelemetry(controller, telemetryStreamInterval);
         }
 
         if (rebootRequired)
@@ -720,6 +740,65 @@ internal sealed class CommandRunner
         return (int)ExitCode.Success;
     }
 
+    private int StreamTelemetry(
+        IRyzenController controller,
+        int intervalMilliseconds)
+    {
+        Stopwatch elapsed = Stopwatch.StartNew();
+        long nextSampleDueMilliseconds = 0;
+        long sequence = 0;
+
+        while (!_cancellationToken.IsCancellationRequested)
+        {
+            OperationResult<double> vcore = controller.GetVcore();
+            if (!vcore.Success)
+            {
+                _error.WriteLine(vcore.Error);
+                return (int)ExitCode.OperationFailed;
+            }
+
+            OperationResult<double> temperature =
+                controller.GetCpuTemperature();
+            if (!temperature.Success)
+            {
+                _error.WriteLine(temperature.Error);
+                return (int)ExitCode.OperationFailed;
+            }
+
+            long sampleElapsedMilliseconds = elapsed.ElapsedMilliseconds;
+            CpuTelemetryStreamSample sample = new(
+                CpuTelemetryStreamSample.RecordKind,
+                CpuTelemetryStreamSample.CurrentSchemaVersion,
+                sequence,
+                sampleElapsedMilliseconds,
+                DateTimeOffset.UtcNow.ToString(
+                    "O",
+                    CultureInfo.InvariantCulture),
+                vcore.Value,
+                temperature.Value,
+                CpuTemperatureTelemetry.PublicSourceName);
+            _output.WriteLine(JsonSerializer.Serialize(sample));
+            _output.Flush();
+            sequence++;
+
+            long schedulingElapsedMilliseconds = elapsed.ElapsedMilliseconds;
+            nextSampleDueMilliseconds =
+                VcoreStreaming.GetNextSampleDueMilliseconds(
+                    nextSampleDueMilliseconds,
+                    schedulingElapsedMilliseconds,
+                    intervalMilliseconds);
+            long remainingMilliseconds =
+                nextSampleDueMilliseconds - schedulingElapsedMilliseconds;
+            if (_cancellationToken.WaitHandle.WaitOne(
+                    checked((int)remainingMilliseconds)))
+            {
+                break;
+            }
+        }
+
+        return (int)ExitCode.Success;
+    }
+
     private void WriteCpuInformation(CpuInformation information)
     {
         WriteInformationLine("CPU", information.CpuName);
@@ -782,6 +861,14 @@ internal sealed class CommandRunner
             return (int)ExitCode.InvalidInput;
         }
 
+        if (request.StreamTelemetry &&
+            HasNonTelemetryOperation(request))
+        {
+            _error.WriteLine(
+                "A telemetry stream cannot be combined with another hardware operation.");
+            return (int)ExitCode.InvalidInput;
+        }
+
         if (request.DiagnoseVcore &&
             (!VcoreDiagnostics.IsValidSampleCount(
                  request.VcoreDiagnosticSampleCount) ||
@@ -801,6 +888,17 @@ internal sealed class CommandRunner
                 $"Vcore stream interval must be from " +
                 $"{VcoreStreaming.MinimumIntervalMilliseconds} through " +
                 $"{VcoreStreaming.MaximumIntervalMilliseconds} milliseconds.");
+            return (int)ExitCode.InvalidInput;
+        }
+
+        if (request.StreamTelemetry &&
+            request.TelemetryStreamIntervalMilliseconds is int telemetryInterval &&
+            !CpuTelemetryStreaming.IsValidInterval(telemetryInterval))
+        {
+            _error.WriteLine(
+                $"Telemetry stream interval must be from " +
+                $"{CpuTelemetryStreaming.MinimumIntervalMilliseconds} through " +
+                $"{CpuTelemetryStreaming.MaximumIntervalMilliseconds} milliseconds.");
             return (int)ExitCode.InvalidInput;
         }
 
@@ -878,12 +976,21 @@ internal sealed class CommandRunner
             return (int)ExitCode.UnsupportedOperation;
         }
 
-        if ((request.GetVcore || request.StreamVcore) &&
+        if ((request.GetVcore || request.StreamVcore || request.StreamTelemetry) &&
             !controller.CanReadVcore)
         {
             _error.WriteLine(
                 controller.VcoreReadUnavailableReason ??
                 "This CPU does not expose a mapped Vcore telemetry source.");
+            return (int)ExitCode.UnsupportedOperation;
+        }
+
+        if ((request.GetCpuTemperature || request.StreamTelemetry) &&
+            !controller.CanReadCpuTemperature)
+        {
+            _error.WriteLine(
+                controller.CpuTemperatureReadUnavailableReason ??
+                "This CPU does not expose mapped Tctl/Tdie temperature telemetry.");
             return (int)ExitCode.UnsupportedOperation;
         }
 
@@ -902,6 +1009,27 @@ internal sealed class CommandRunner
                request.GetPboScalar ||
                request.FMax is not null ||
                request.GetFMax ||
+               request.GetCpuTemperature ||
+               request.StreamTelemetry ||
+               request.DiagnoseVcore ||
+               request.ShowInfo;
+    }
+
+    private static bool HasNonTelemetryOperation(CliRequest request)
+    {
+        return request.OffsetSpecification is not null ||
+               request.DisabledCores is not null ||
+               request.EnableAllCores ||
+               request.GetOffsetsTerse ||
+               request.GetPhysicalCores ||
+               request.GetEnabledCores ||
+               request.PboScalar is not null ||
+               request.GetPboScalar ||
+               request.FMax is not null ||
+               request.GetFMax ||
+               request.GetVcore ||
+               request.StreamVcore ||
+               request.GetCpuTemperature ||
                request.DiagnoseVcore ||
                request.ShowInfo;
     }

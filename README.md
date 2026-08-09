@@ -37,7 +37,7 @@ Do not select the unsigned unrestricted PawnIO edition.
 Verify a downloaded archive from PowerShell:
 
 ```powershell
-Get-FileHash .\ryzen-smu-cli-v0.3.5-win-x64-self-contained.zip -Algorithm SHA256
+Get-FileHash .\ryzen-smu-cli-v0.4.0-win-x64-self-contained.zip -Algorithm SHA256
 Get-Content .\checksums-sha256.txt
 ```
 
@@ -66,6 +66,7 @@ Open an Administrator PowerShell in the extracted release directory:
 .\ryzen-smu-cli.exe --info
 .\ryzen-smu-cli.exe --get-fmax
 .\ryzen-smu-cli.exe --get-vcore
+.\ryzen-smu-cli.exe --get-cpu-temperature
 .\ryzen-smu-cli.exe --get-enabled-cores
 ```
 
@@ -149,6 +150,17 @@ The framework-dependent publish directory is written to
     open. Stop with Ctrl+C. This option cannot be combined with another
     hardware operation.
 
+--get-cpu-temperature
+    Print one read-only CPU Tctl/Tdie temperature sample in degrees Celsius.
+    The supported Zen-family path reads the fixed thermal-control SMN
+    register and applies the processor's documented Tctl offset when needed.
+
+--stream-telemetry
+    Continuously print one compact JSON object per line containing an atomic
+    Vcore and CPU Tctl/Tdie sample. The stream keeps one PawnIO/SMU session
+    open and stops cleanly with Ctrl+C. It cannot be combined with another
+    hardware operation.
+
 --diagnose-vcore
     Capture the selected Vcore reading plus raw Zen 4/5 SVI register
     candidates and decoded VID fields as one read-only JSON hardware report.
@@ -162,8 +174,9 @@ The framework-dependent publish directory is written to
     40. This option is valid only with --diagnose-vcore.
 
 --interval-ms <milliseconds>
-    Set the --stream-vcore or --diagnose-vcore interval from 50 through 60000
-    ms. The default is 150 ms.
+    Set the sampling interval. --stream-vcore and --diagnose-vcore allow 50
+    through 60000 ms and default to 150 ms. --stream-telemetry allows 100
+    through 60000 ms and defaults to 500 ms.
 ```
 
 Run `ryzen-smu-cli.exe --help` for the canonical option descriptions. Multiple
@@ -203,6 +216,28 @@ The fields are the literal record type, zero-based sequence number, monotonic
 milliseconds since stream start, UTC timestamp in round-trip format, and
 volts with six decimal places. Stream diagnostics are written only to standard
 error.
+
+For automation, `--get-cpu-temperature` emits exactly one invariant-culture
+line:
+
+```text
+Current CPU temperature: 71.875 C.
+```
+
+`--stream-telemetry` has no header. Every flushed stdout line is one complete
+schema-versioned JSON object:
+
+```json
+{"kind":"telemetry","schemaVersion":1,"sequence":0,"elapsedMilliseconds":7,"timestampUtc":"2026-08-10T08:30:00.1234567+00:00","vcoreVolts":1.225,"cpuTemperatureCelsius":71.875,"temperatureSource":"tctl-tdie"}
+```
+
+Sequence numbers start at zero and remain contiguous. Elapsed milliseconds
+come from a monotonic clock and increase between samples; the UTC timestamp is
+informational wall-clock time in round-trip format. A record is written only
+after both reads succeed. If either Vcore or temperature fails, no partial
+record is emitted, the diagnostic goes to stderr, and the command exits with
+code 6. An unsupported Vcore or temperature mapping fails before the first
+stdout record with code 3.
 
 Capture a shareable Vcore qualification report without performing a write:
 
@@ -250,6 +285,12 @@ desktop-die path, exact PM-table version and structure size. Marketing names
 are not used for layout selection. OEM, regional, X3D, and disabled-iGPU SKUs
 based on the same silicon therefore follow the same selector, but a product
 name alone never guarantees support for an unobserved firmware layout.
+
+CPU temperature uses the read-only Tctl/Tdie thermal-control register on AMD
+Families `17h`, `19h`, and `1Ah`. Sentinel and implausible values are rejected;
+the decoder applies the legacy Ryzen/Threadripper Tctl reporting offsets used
+by ZenStates-Core. `--stream-telemetry` is available only when both this
+temperature source and the platform's Vcore mapping are available.
 
 The confidence shown by `--info` describes the telemetry mapping, not every
 CPU carrying that marketing family:
@@ -395,6 +436,7 @@ Additional documentation:
 - [Architecture](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/ARCHITECTURE.md)
 - [Release process](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/RELEASING.md)
 - [Security policy](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/SECURITY.md)
+- [v0.4.0 release notes](docs/releases/v0.4.0.md)
 - [v0.3.5 release notes](docs/releases/v0.3.5.md)
 - [v0.3.4 release notes](docs/releases/v0.3.4.md)
 - [v0.3.3 release notes](docs/releases/v0.3.3.md)

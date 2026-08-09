@@ -7,6 +7,44 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-10
+
+### Added
+
+- `--get-cpu-temperature` for one invariant-culture CPU Tctl/Tdie temperature
+  reading through the signed PawnIO read-only SMN path.
+- `--stream-telemetry` for atomic Vcore and CPU-temperature JSON Lines records
+  through one persistent controller session. Schema 1 records contain
+  `kind`, `schemaVersion`, `sequence`, `elapsedMilliseconds`, `timestampUtc`,
+  `vcoreVolts`, `cpuTemperatureCelsius`, and `temperatureSource`.
+- A telemetry-specific `--interval-ms` range of 100 through 60000 ms with a
+  500 ms default. Existing Vcore stream and diagnostic interval behavior is
+  unchanged.
+- Pure CPU-temperature register decoding with range-bit handling, legacy Tctl
+  offsets, sentinel rejection, and plausible-value validation for Families
+  17h, 19h, and 1Ah.
+
+### Changed
+
+- Combined telemetry emits a record only after both hardware reads succeed.
+  Either failure emits no partial JSON, reports the diagnostic on stderr, and
+  returns the existing operation-failed exit code.
+- Release-package verification now checks required and forbidden archive
+  entries, symbols isolation, PawnIO-bundle contents, and the exact
+  ZenStates-Core license hash.
+
+### Fixed
+
+- Publish output now always contains `ZenStates-Core.LICENSE.txt`. Project-
+  reference conflict resolution previously discarded the renamed item before
+  the ambiguous raw `LICENSE` document was removed.
+
+### Compatibility
+
+- All v0.3.5 command stdout formats, including the tab-separated
+  `--stream-vcore` protocol, remain unchanged. The new combined stream uses a
+  separate schema-versioned JSONL contract.
+
 ## [0.3.5] - 2026-08-03
 
 ### Changed
@@ -298,7 +336,8 @@ update over 0.1.3.
 
 - Initial tagged CLI release based on ZenStates-Core.
 
-[Unreleased]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.5...HEAD
+[Unreleased]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.5...v0.4.0
 [0.3.5]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.2...v0.3.3

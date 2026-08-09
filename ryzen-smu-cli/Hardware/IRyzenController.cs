@@ -38,6 +38,10 @@ internal interface IRyzenController : IDisposable
 
     string? VcoreReadUnavailableReason { get; }
 
+    bool CanReadCpuTemperature { get; }
+
+    string? CpuTemperatureReadUnavailableReason { get; }
+
     OperationResult<int> GetPboOffset(CoreAddress core);
 
     OperationResult SetPboOffset(CoreAddress core, int offset);
@@ -51,6 +55,8 @@ internal interface IRyzenController : IDisposable
     OperationResult SetFMax(uint megahertz);
 
     OperationResult<double> GetVcore();
+
+    OperationResult<double> GetCpuTemperature();
 
     IReadOnlyDictionary<uint, OperationResult<uint>>
         ReadVcoreDiagnosticRegisters();

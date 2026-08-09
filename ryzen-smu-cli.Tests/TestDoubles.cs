@@ -102,6 +102,10 @@ internal sealed class FakeRyzenController : IRyzenController
 
     public string? VcoreReadUnavailableReason { get; init; }
 
+    public bool CanReadCpuTemperature { get; init; } = true;
+
+    public string? CpuTemperatureReadUnavailableReason { get; init; }
+
     public Dictionary<int, int> Offsets { get; } = [];
 
     public List<(CoreAddress Core, int Offset)> OffsetWrites { get; } = [];
@@ -127,6 +131,11 @@ internal sealed class FakeRyzenController : IRyzenController
 
     public Func<OperationResult<double>>? GetVcoreHandler { get; init; }
 
+    public OperationResult<double> GetCpuTemperatureResult { get; init; } =
+        OperationResult<double>.Ok(70.0);
+
+    public Func<OperationResult<double>>? GetCpuTemperatureHandler { get; init; }
+
     public Func<CoreAddress, int, OperationResult<int>>? GetPboOffsetHandler
     {
         get;
@@ -136,6 +145,8 @@ internal sealed class FakeRyzenController : IRyzenController
     public int FMaxReadCount { get; private set; }
 
     public int VcoreReadCount { get; private set; }
+
+    public int CpuTemperatureReadCount { get; private set; }
 
     public Dictionary<uint, OperationResult<uint>> SmuRegisterReads { get; } = [];
 
@@ -199,6 +210,12 @@ internal sealed class FakeRyzenController : IRyzenController
     {
         VcoreReadCount++;
         return GetVcoreHandler?.Invoke() ?? GetVcoreResult;
+    }
+
+    public OperationResult<double> GetCpuTemperature()
+    {
+        CpuTemperatureReadCount++;
+        return GetCpuTemperatureHandler?.Invoke() ?? GetCpuTemperatureResult;
     }
 
     public IReadOnlyDictionary<uint, OperationResult<uint>>

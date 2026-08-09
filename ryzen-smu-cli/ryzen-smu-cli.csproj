@@ -6,7 +6,7 @@
     <RootNamespace>ryzen_smu_cli</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>0.3.5</Version>
+    <Version>0.4.0</Version>
     <LangVersion>12</LangVersion>
     <Authors>Terry577 and contributors</Authors>
     <Description>Windows CLI for selected AMD Ryzen SMU operations.</Description>
@@ -95,7 +95,37 @@
       <ResolvedFileToPublish
         Remove="@(ResolvedFileToPublish)"
         Condition="'%(ResolvedFileToPublish.RelativePath)' == 'LICENSE' Or
-                   '%(ResolvedFileToPublish.RelativePath)' == 'README.md'" />
+                   '%(ResolvedFileToPublish.RelativePath)' == 'README.md' Or
+                   '%(ResolvedFileToPublish.RelativePath)' == 'ZenStates-Core.LICENSE.txt'" />
+      <!--
+        The project reference also contributes the same source file as
+        LICENSE. Publish conflict resolution can otherwise discard this
+        renamed item before the ambiguous dependency document is removed.
+        Re-add it after ComputeFilesToPublish so every publish path has one
+        deterministic, inspectable ZenStates-Core license name.
+      -->
+      <ResolvedFileToPublish Include="$(MSBuildProjectDirectory)\include\ZenStates-Core\LICENSE">
+        <RelativePath>ZenStates-Core.LICENSE.txt</RelativePath>
+        <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
     </ItemGroup>
+  </Target>
+
+  <Target Name="VerifyRequiredPublishContents" AfterTargets="Publish">
+    <ItemGroup>
+      <_RequiredPublishedFile Include="$(PublishDir)ryzen-smu-cli.exe" />
+      <_RequiredPublishedFile Include="$(PublishDir)inpoutx64.dll" />
+      <_RequiredPublishedFile Include="$(PublishDir)InpOut.LICENSE.txt" />
+      <_RequiredPublishedFile Include="$(PublishDir)PawnIO.COPYING.txt" />
+      <_RequiredPublishedFile Include="$(PublishDir)ZenStates-Core.LICENSE.txt" />
+      <_RequiredPublishedFile Include="$(PublishDir)ryzen-smu-cli.LICENSE.txt" />
+      <_RequiredPublishedFile Include="$(PublishDir)THIRD-PARTY-NOTICES.md" />
+      <_RequiredPublishedFile Include="$(PublishDir)ryzen-smu-cli.README.md" />
+      <_RequiredPublishedFile Include="$(PublishDir)CHANGELOG.md" />
+    </ItemGroup>
+    <Error
+      Condition="!Exists('%(_RequiredPublishedFile.Identity)')"
+      Text="Required published file '%(_RequiredPublishedFile.Filename)%(_RequiredPublishedFile.Extension)' is missing." />
   </Target>
 </Project>

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 
 namespace ryzen_smu_cli.Tests;
 
@@ -696,6 +697,293 @@ public sealed class CommandRunnerTests
 
         Assert.Equal((int)ExitCode.OperationFailed, exitCode);
         Assert.Equal(1, controller.VcoreReadCount);
+        Assert.True(controller.Disposed);
+        Assert.Contains("output pipe was closed", error.ToString());
+    }
+
+    [Fact]
+    public void UnsupportedCpuTemperatureReturnsCapabilityExitCodeWithoutStdout()
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            CanReadCpuTemperature = false,
+            CpuTemperatureReadUnavailableReason =
+                "CPU temperature telemetry is not mapped for family 0x1B.",
+        };
+        StringWriter output = new();
+        StringWriter error = new();
+        CommandRunner runner = CreateRunner(controller, output, error);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            GetCpuTemperature = true,
+        });
+
+        Assert.Equal((int)ExitCode.UnsupportedOperation, exitCode);
+        Assert.Equal(string.Empty, output.ToString());
+        Assert.Equal(0, controller.CpuTemperatureReadCount);
+        Assert.Contains("0x1B", error.ToString());
+    }
+
+    [Fact]
+    public void FailedCpuTemperatureReadReturnsOperationExitCodeWithoutStdout()
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            GetCpuTemperatureResult =
+                OperationResult<double>.Fail("thermal register read failed"),
+        };
+        StringWriter output = new();
+        StringWriter error = new();
+        CommandRunner runner = CreateRunner(controller, output, error);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            GetCpuTemperature = true,
+        });
+
+        Assert.Equal((int)ExitCode.OperationFailed, exitCode);
+        Assert.Equal(string.Empty, output.ToString());
+        Assert.Equal(1, controller.CpuTemperatureReadCount);
+        Assert.Contains("thermal register read failed", error.ToString());
+    }
+
+    [Fact]
+    public void TelemetryStreamUsesVersionedJsonLinesAndOneController()
+    {
+        using CancellationTokenSource cancellationSource = new();
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            GetVcoreResult = OperationResult<double>.Ok(1.1875),
+            GetCpuTemperatureHandler = () =>
+            {
+                cancellationSource.Cancel();
+                return OperationResult<double>.Ok(71.875);
+            },
+        };
+        StringWriter output = new();
+        CommandRunner runner = CreateRunnerWithCancellation(
+            controller,
+            output,
+            cancellationSource.Token);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            TelemetryStreamIntervalMilliseconds = 500,
+        });
+
+        Assert.Equal((int)ExitCode.Success, exitCode);
+        Assert.Equal(1, controller.VcoreReadCount);
+        Assert.Equal(1, controller.CpuTemperatureReadCount);
+        using JsonDocument document = JsonDocument.Parse(output.ToString());
+        JsonElement root = document.RootElement;
+        Assert.Equal(8, root.EnumerateObject().Count());
+        Assert.Equal("telemetry", root.GetProperty("kind").GetString());
+        Assert.Equal(1, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(0, root.GetProperty("sequence").GetInt64());
+        Assert.True(root.GetProperty("elapsedMilliseconds").GetInt64() >= 0);
+        string timestamp = root.GetProperty("timestampUtc").GetString()!;
+        Assert.EndsWith("+00:00", timestamp, StringComparison.Ordinal);
+        Assert.True(DateTimeOffset.TryParseExact(
+            timestamp,
+            "O",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out DateTimeOffset parsedTimestamp));
+        Assert.Equal(TimeSpan.Zero, parsedTimestamp.Offset);
+        Assert.Equal(
+            1.1875,
+            root.GetProperty("vcoreVolts").GetDouble(),
+            precision: 6);
+        Assert.Equal(
+            71.875,
+            root.GetProperty("cpuTemperatureCelsius").GetDouble(),
+            precision: 3);
+        Assert.Equal(
+            "tctl-tdie",
+            root.GetProperty("temperatureSource").GetString());
+    }
+
+    [Fact]
+    public void TelemetryStreamSequencesJsonLinesWithIncreasingElapsedTime()
+    {
+        using CancellationTokenSource cancellationSource = new();
+        int temperatureReads = 0;
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            GetCpuTemperatureHandler = () =>
+            {
+                temperatureReads++;
+                if (temperatureReads == 2)
+                {
+                    cancellationSource.Cancel();
+                }
+
+                return OperationResult<double>.Ok(70.0 + temperatureReads);
+            },
+        };
+        StringWriter output = new();
+        CommandRunner runner = CreateRunnerWithCancellation(
+            controller,
+            output,
+            cancellationSource.Token);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            TelemetryStreamIntervalMilliseconds = 100,
+        });
+
+        Assert.Equal((int)ExitCode.Success, exitCode);
+        string[] lines = output
+            .ToString()
+            .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(2, lines.Length);
+        using JsonDocument first = JsonDocument.Parse(lines[0]);
+        using JsonDocument second = JsonDocument.Parse(lines[1]);
+        Assert.Equal(0, first.RootElement.GetProperty("sequence").GetInt64());
+        Assert.Equal(1, second.RootElement.GetProperty("sequence").GetInt64());
+        Assert.True(
+            second.RootElement.GetProperty("elapsedMilliseconds").GetInt64() >
+            first.RootElement.GetProperty("elapsedMilliseconds").GetInt64());
+    }
+
+    [Fact]
+    public void PreCancelledTelemetryStreamIsSuccessfulAndReadsNothing()
+    {
+        using CancellationTokenSource cancellationSource = new();
+        cancellationSource.Cancel();
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8));
+        StringWriter output = new();
+        CommandRunner runner = CreateRunnerWithCancellation(
+            controller,
+            output,
+            cancellationSource.Token);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            TelemetryStreamIntervalMilliseconds = 500,
+        });
+
+        Assert.Equal((int)ExitCode.Success, exitCode);
+        Assert.Equal(string.Empty, output.ToString());
+        Assert.Equal(0, controller.VcoreReadCount);
+        Assert.Equal(0, controller.CpuTemperatureReadCount);
+    }
+
+    [Fact]
+    public void UnsupportedTelemetryTemperatureFailsBeforeEitherRead()
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            CanReadCpuTemperature = false,
+            CpuTemperatureReadUnavailableReason =
+                "CPU temperature telemetry is not mapped for family 0x1B.",
+        };
+        StringWriter output = new();
+        StringWriter error = new();
+        CommandRunner runner = CreateRunner(controller, output, error);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            TelemetryStreamIntervalMilliseconds = 500,
+        });
+
+        Assert.Equal((int)ExitCode.UnsupportedOperation, exitCode);
+        Assert.Equal(string.Empty, output.ToString());
+        Assert.Equal(0, controller.VcoreReadCount);
+        Assert.Equal(0, controller.CpuTemperatureReadCount);
+        Assert.Contains("0x1B", error.ToString());
+    }
+
+    [Fact]
+    public void TelemetryStreamVcoreFailureEmitsNoPartialSample()
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            GetVcoreResult =
+                OperationResult<double>.Fail("Vcore telemetry refresh failed"),
+        };
+        StringWriter output = new();
+        StringWriter error = new();
+        CommandRunner runner = CreateRunner(controller, output, error);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            TelemetryStreamIntervalMilliseconds = 500,
+        });
+
+        Assert.Equal((int)ExitCode.OperationFailed, exitCode);
+        Assert.Equal(string.Empty, output.ToString());
+        Assert.Equal(1, controller.VcoreReadCount);
+        Assert.Equal(0, controller.CpuTemperatureReadCount);
+        Assert.Contains("Vcore telemetry refresh failed", error.ToString());
+    }
+
+    [Fact]
+    public void TelemetryStreamTemperatureFailureEmitsNoPartialSample()
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            GetCpuTemperatureResult =
+                OperationResult<double>.Fail("temperature telemetry refresh failed"),
+        };
+        StringWriter output = new();
+        StringWriter error = new();
+        CommandRunner runner = CreateRunner(controller, output, error);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            TelemetryStreamIntervalMilliseconds = 500,
+        });
+
+        Assert.Equal((int)ExitCode.OperationFailed, exitCode);
+        Assert.Equal(string.Empty, output.ToString());
+        Assert.Equal(1, controller.VcoreReadCount);
+        Assert.Equal(1, controller.CpuTemperatureReadCount);
+        Assert.Contains("temperature telemetry refresh failed", error.ToString());
+    }
+
+    [Theory]
+    [InlineData(99)]
+    [InlineData(60_001)]
+    public void TelemetryStreamRejectsOutOfRangeIntervalsBeforeReadingHardware(
+        int intervalMilliseconds)
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8));
+        StringWriter output = new();
+        StringWriter error = new();
+        CommandRunner runner = CreateRunner(controller, output, error);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            TelemetryStreamIntervalMilliseconds = intervalMilliseconds,
+        });
+
+        Assert.Equal((int)ExitCode.InvalidInput, exitCode);
+        Assert.Equal(string.Empty, output.ToString());
+        Assert.Equal(0, controller.VcoreReadCount);
+        Assert.Equal(0, controller.CpuTemperatureReadCount);
+    }
+
+    [Fact]
+    public void ClosedTelemetryStreamPipeDisposesHardwareSession()
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8));
+        StringWriter error = new();
+        CommandRunner runner = new(
+            () => controller,
+            FakePrivilegeChecker.Administrator(),
+            new ThrowingTextWriter(),
+            error);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            TelemetryStreamIntervalMilliseconds = 500,
+        });
+
+        Assert.Equal((int)ExitCode.OperationFailed, exitCode);
+        Assert.Equal(1, controller.VcoreReadCount);
+        Assert.Equal(1, controller.CpuTemperatureReadCount);
         Assert.True(controller.Disposed);
         Assert.Contains("output pipe was closed", error.ToString());
     }

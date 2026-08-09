@@ -165,6 +165,14 @@ try {
         -DestinationPath $symbolsArchive `
         -CompressionLevel Optimal
 
+    & (Join-Path $PSScriptRoot "VerifyPackageContents.ps1") `
+        -FrameworkDependentArchive $frameworkDependentArchive `
+        -SelfContainedArchive $selfContainedArchive `
+        -PawnIoBundleArchive $pawnIoBundleArchive `
+        -SymbolsArchive $symbolsArchive `
+        -ZenStatesLicensePath (
+            Join-Path $repositoryRoot "ryzen-smu-cli\include\ZenStates-Core\LICENSE")
+
     $checksumLines = foreach ($archive in @(
             $frameworkDependentArchive,
             $selfContainedArchive,
