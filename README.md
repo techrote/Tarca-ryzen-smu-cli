@@ -419,9 +419,11 @@ codes rather than being treated as success.
 ## Development
 
 The solution separates command-line parsing, domain validation, hardware
-adapters, and orchestration so most behavior can be tested without touching
-real hardware. `scripts/HardwareSmokeTest.ps1` contains only read operations
-for an elevated post-build check.
+adapters, and orchestration. Automated coverage is deliberately limited to a
+closed allowlist of 13 critical safety/protocol scenarios; ordinary changes do
+not add tests without explicit user approval. See the root `AGENTS.md` for the
+fixed budget and boundaries. `scripts/HardwareSmokeTest.ps1` contains only read
+operations for an elevated post-build check.
 
 See
 [CONTRIBUTING.md](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/CONTRIBUTING.md)

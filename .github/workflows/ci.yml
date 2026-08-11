@@ -22,6 +22,16 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      - name: Verify closed test allowlist
+        shell: pwsh
+        run: |
+          $source = Get-ChildItem ryzen-smu-cli.Tests -Filter *.cs -Recurse
+          $facts = @($source | Select-String -Pattern '\[Fact\]').Count
+          $matrices = @($source | Select-String -Pattern '\[(Theory|InlineData)').Count
+          if ($facts -ne 13 -or $matrices -ne 0) {
+            throw "Expected exactly 13 Facts and no Theory/InlineData; found $facts and $matrices."
+          }
+
       - name: Restore
         run: dotnet restore .\ryzen-smu-cli.sln
 

@@ -7,7 +7,10 @@ Describe the user-visible change and why it is needed.
 - [ ] `scripts/Test.ps1` passes.
 - [ ] `dotnet format --verify-no-changes` passes.
 - [ ] `git diff --check` passes.
-- [ ] New or changed behavior has automated tests.
+- [ ] The closed 13-test allowlist is unchanged, or the PR links the user's
+      explicit approval for any replacement/addition and budget change.
+- [ ] No `[Theory]`, `[InlineData]`, or unapproved test parameter matrix was
+      introduced.
 - [ ] No real hardware writes are executed by tests or CI.
 - [ ] Documentation and `CHANGELOG.md` are updated when behavior changes.
 - [ ] Native file provenance, license, and SHA-256 are updated when applicable.
