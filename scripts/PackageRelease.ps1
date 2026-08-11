@@ -30,6 +30,20 @@ if ($Version -notmatch "^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$") {
     throw "Version '$Version' is not a supported Semantic Version."
 }
 
+$projectVersionNode = Select-Xml -LiteralPath $projectPath `
+    -XPath "/Project/PropertyGroup/Version" |
+    Select-Object -First 1
+if ($null -eq $projectVersionNode) {
+    throw "The project does not define a Version property."
+}
+
+$projectVersion = $projectVersionNode.Node.InnerText
+if ($Version -ne $projectVersion) {
+    throw (
+        "Package version '$Version' does not match project version " +
+        "'$projectVersion'.")
+}
+
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = Join-Path $repositoryRoot "artifacts\release"
 }
@@ -170,6 +184,7 @@ try {
         -SelfContainedArchive $selfContainedArchive `
         -PawnIoBundleArchive $pawnIoBundleArchive `
         -SymbolsArchive $symbolsArchive `
+        -Version $Version `
         -ZenStatesLicensePath (
             Join-Path $repositoryRoot "ryzen-smu-cli\include\ZenStates-Core\LICENSE")
 

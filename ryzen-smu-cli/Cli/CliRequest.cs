@@ -26,6 +26,13 @@ internal sealed record CliRequest(
     public bool StreamTelemetry =>
         TelemetryStreamIntervalMilliseconds.HasValue;
 
+    public int? SystemTelemetryStreamIntervalMilliseconds { get; init; }
+
+    public SystemTelemetryTargetSet? SystemTelemetryTargets { get; init; }
+
+    public bool StreamSystemTelemetry =>
+        SystemTelemetryStreamIntervalMilliseconds.HasValue;
+
     public int VcoreDiagnosticSampleCount { get; init; } =
         VcoreDiagnostics.DefaultSampleCount;
 
@@ -48,5 +55,6 @@ internal sealed record CliRequest(
         DiagnoseVcore ||
         GetCpuTemperature ||
         StreamTelemetry ||
+        StreamSystemTelemetry ||
         ShowInfo;
 }

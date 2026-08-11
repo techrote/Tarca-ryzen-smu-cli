@@ -355,6 +355,16 @@ internal sealed class CommandRunner
             return StreamTelemetry(controller, telemetryStreamInterval);
         }
 
+        if (request.SystemTelemetryStreamIntervalMilliseconds is
+                int systemTelemetryStreamInterval &&
+            request.SystemTelemetryTargets is not null)
+        {
+            return StreamSystemTelemetry(
+                controller,
+                systemTelemetryStreamInterval,
+                request.SystemTelemetryTargets.Targets);
+        }
+
         if (rebootRequired)
         {
             _output.WriteLine("A reboot is required for changes to take effect.");
@@ -799,6 +809,89 @@ internal sealed class CommandRunner
         return (int)ExitCode.Success;
     }
 
+    private int StreamSystemTelemetry(
+        IRyzenController controller,
+        int intervalMilliseconds,
+        IReadOnlyList<SystemTelemetryTarget> targets)
+    {
+        SystemTelemetryAccumulator accumulator = new(
+            intervalMilliseconds,
+            targets);
+        Stopwatch elapsed = Stopwatch.StartNew();
+        long nextSampleDueMilliseconds = 0;
+        long sequence = 0;
+
+        while (!_cancellationToken.IsCancellationRequested)
+        {
+            OperationResult<SystemTelemetryRawSnapshot> rawSnapshot =
+                controller.ReadSystemTelemetrySnapshot(targets);
+            if (!rawSnapshot.Success)
+            {
+                _error.WriteLine(rawSnapshot.Error);
+                return (int)ExitCode.OperationFailed;
+            }
+
+            SystemTelemetryObservation observation =
+                accumulator.Observe(rawSnapshot.Value!);
+            if (!observation.Success)
+            {
+                _error.WriteLine(observation.Error);
+                return (int)ExitCode.OperationFailed;
+            }
+
+            if (!observation.IsBaseline)
+            {
+                SystemTelemetryMeasurement measurement =
+                    observation.Measurement!;
+                SystemTelemetryTargetStreamSample[] targetSamples =
+                    measurement.Targets
+                        .Select(target => new SystemTelemetryTargetStreamSample(
+                            target.Target.Group,
+                            target.Target.Processor,
+                            target.AperfDelta,
+                            target.MperfDelta,
+                            target.MeasurementIntervalMilliseconds,
+                            target.EffectiveMegahertz))
+                        .ToArray();
+                SystemTelemetryStreamSample sample = new(
+                    SystemTelemetryStreamSample.RecordKind,
+                    SystemTelemetryStreamSample.CurrentSchemaVersion,
+                    sequence,
+                    elapsed.ElapsedMilliseconds,
+                    DateTimeOffset.UtcNow.ToString(
+                        "O",
+                        CultureInfo.InvariantCulture),
+                    measurement.MeasurementIntervalMilliseconds,
+                    measurement.AcquisitionDurationMilliseconds,
+                    measurement.VcoreVolts,
+                    measurement.CpuTemperatureCelsius,
+                    CpuTemperatureTelemetry.PublicSourceName,
+                    measurement.PackagePowerWatts,
+                    SystemTelemetryStreaming.PackagePowerSource,
+                    targetSamples);
+                _output.WriteLine(JsonSerializer.Serialize(sample));
+                _output.Flush();
+                sequence++;
+            }
+
+            long schedulingElapsedMilliseconds = elapsed.ElapsedMilliseconds;
+            nextSampleDueMilliseconds =
+                VcoreStreaming.GetNextSampleDueMilliseconds(
+                    nextSampleDueMilliseconds,
+                    schedulingElapsedMilliseconds,
+                    intervalMilliseconds);
+            long remainingMilliseconds =
+                nextSampleDueMilliseconds - schedulingElapsedMilliseconds;
+            if (_cancellationToken.WaitHandle.WaitOne(
+                    checked((int)remainingMilliseconds)))
+            {
+                break;
+            }
+        }
+
+        return (int)ExitCode.Success;
+    }
+
     private void WriteCpuInformation(CpuInformation information)
     {
         WriteInformationLine("CPU", information.CpuName);
@@ -869,6 +962,15 @@ internal sealed class CommandRunner
             return (int)ExitCode.InvalidInput;
         }
 
+        if (request.StreamSystemTelemetry &&
+            HasNonSystemTelemetryOperation(request))
+        {
+            _error.WriteLine(
+                "A system telemetry stream cannot be combined with another " +
+                "hardware operation.");
+            return (int)ExitCode.InvalidInput;
+        }
+
         if (request.DiagnoseVcore &&
             (!VcoreDiagnostics.IsValidSampleCount(
                  request.VcoreDiagnosticSampleCount) ||
@@ -899,6 +1001,27 @@ internal sealed class CommandRunner
                 $"Telemetry stream interval must be from " +
                 $"{CpuTelemetryStreaming.MinimumIntervalMilliseconds} through " +
                 $"{CpuTelemetryStreaming.MaximumIntervalMilliseconds} milliseconds.");
+            return (int)ExitCode.InvalidInput;
+        }
+
+        if (request.StreamSystemTelemetry &&
+            request.SystemTelemetryStreamIntervalMilliseconds is
+                int systemTelemetryInterval &&
+            !SystemTelemetryStreaming.IsValidInterval(systemTelemetryInterval))
+        {
+            _error.WriteLine(
+                $"System telemetry stream interval must be from " +
+                $"{SystemTelemetryStreaming.MinimumIntervalMilliseconds} through " +
+                $"{SystemTelemetryStreaming.MaximumIntervalMilliseconds} " +
+                "milliseconds.");
+            return (int)ExitCode.InvalidInput;
+        }
+
+        if (request.StreamSystemTelemetry &&
+            request.SystemTelemetryTargets is null)
+        {
+            _error.WriteLine(
+                "A system telemetry stream requires a complete target set.");
             return (int)ExitCode.InvalidInput;
         }
 
@@ -976,7 +1099,10 @@ internal sealed class CommandRunner
             return (int)ExitCode.UnsupportedOperation;
         }
 
-        if ((request.GetVcore || request.StreamVcore || request.StreamTelemetry) &&
+        if ((request.GetVcore ||
+             request.StreamVcore ||
+             request.StreamTelemetry ||
+             request.StreamSystemTelemetry) &&
             !controller.CanReadVcore)
         {
             _error.WriteLine(
@@ -985,7 +1111,9 @@ internal sealed class CommandRunner
             return (int)ExitCode.UnsupportedOperation;
         }
 
-        if ((request.GetCpuTemperature || request.StreamTelemetry) &&
+        if ((request.GetCpuTemperature ||
+             request.StreamTelemetry ||
+             request.StreamSystemTelemetry) &&
             !controller.CanReadCpuTemperature)
         {
             _error.WriteLine(
@@ -1011,6 +1139,7 @@ internal sealed class CommandRunner
                request.GetFMax ||
                request.GetCpuTemperature ||
                request.StreamTelemetry ||
+               request.StreamSystemTelemetry ||
                request.DiagnoseVcore ||
                request.ShowInfo;
     }
@@ -1030,6 +1159,27 @@ internal sealed class CommandRunner
                request.GetVcore ||
                request.StreamVcore ||
                request.GetCpuTemperature ||
+               request.DiagnoseVcore ||
+               request.StreamSystemTelemetry ||
+               request.ShowInfo;
+    }
+
+    private static bool HasNonSystemTelemetryOperation(CliRequest request)
+    {
+        return request.OffsetSpecification is not null ||
+               request.DisabledCores is not null ||
+               request.EnableAllCores ||
+               request.GetOffsetsTerse ||
+               request.GetPhysicalCores ||
+               request.GetEnabledCores ||
+               request.PboScalar is not null ||
+               request.GetPboScalar ||
+               request.FMax is not null ||
+               request.GetFMax ||
+               request.GetVcore ||
+               request.StreamVcore ||
+               request.GetCpuTemperature ||
+               request.StreamTelemetry ||
                request.DiagnoseVcore ||
                request.ShowInfo;
     }

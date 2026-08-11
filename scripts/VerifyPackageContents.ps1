@@ -13,6 +13,9 @@ param(
     [string]$SymbolsArchive,
 
     [Parameter(Mandatory)]
+    [string]$Version,
+
+    [Parameter(Mandatory)]
     [string]$ZenStatesLicensePath
 )
 
@@ -118,6 +121,37 @@ function Get-ArchiveEntrySha256 {
     }
 }
 
+function Get-ArchiveEntryText {
+    param(
+        [Parameter(Mandatory)][string]$ArchivePath,
+        [Parameter(Mandatory)][string]$EntryName
+    )
+
+    $archive = [IO.Compression.ZipFile]::OpenRead($ArchivePath)
+    try {
+        $entry = $archive.GetEntry($EntryName)
+        if ($null -eq $entry) {
+            throw "Archive '$ArchivePath' has no entry '$EntryName'."
+        }
+
+        $stream = $entry.Open()
+        $reader = [IO.StreamReader]::new(
+            $stream,
+            [Text.Encoding]::UTF8,
+            $true)
+        try {
+            return $reader.ReadToEnd()
+        }
+        finally {
+            $reader.Dispose()
+            $stream.Dispose()
+        }
+    }
+    finally {
+        $archive.Dispose()
+    }
+}
+
 $runtimeEntries = @(
     "ryzen-smu-cli.exe",
     "inpoutx64.dll",
@@ -170,6 +204,30 @@ foreach ($archivePath in @(
         throw (
             "Archive '$archivePath' contains the wrong ZenStates-Core license. " +
             "Expected SHA-256 $expectedLicenseHash, got $archiveLicenseHash.")
+    }
+
+    $readme = Get-ArchiveEntryText `
+        $archivePath "ryzen-smu-cli.README.md"
+    foreach ($requiredContractMarker in @(
+            "--stream-system-telemetry",
+            "--targets <group:processor,...>",
+            '"schemaVersion":2',
+            '"packagePowerSource":"amd-rapl-package-energy"')) {
+        if ($readme.IndexOf(
+                $requiredContractMarker,
+                [StringComparison]::Ordinal) -lt 0) {
+            throw (
+                "Archive '$archivePath' README is missing schema-2 marker " +
+                "'$requiredContractMarker'.")
+        }
+    }
+
+    $changelog = Get-ArchiveEntryText $archivePath "CHANGELOG.md"
+    if ($changelog.IndexOf(
+            "## [$Version]",
+            [StringComparison]::Ordinal) -lt 0) {
+        throw (
+            "Archive '$archivePath' changelog is missing version '$Version'.")
     }
 }
 

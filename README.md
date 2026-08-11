@@ -37,7 +37,7 @@ Do not select the unsigned unrestricted PawnIO edition.
 Verify a downloaded archive from PowerShell:
 
 ```powershell
-Get-FileHash .\ryzen-smu-cli-v0.4.0-win-x64-self-contained.zip -Algorithm SHA256
+Get-FileHash .\ryzen-smu-cli-v0.5.0-win-x64-self-contained.zip -Algorithm SHA256
 Get-Content .\checksums-sha256.txt
 ```
 
@@ -161,6 +161,19 @@ The framework-dependent publish directory is written to
     open and stops cleanly with Ctrl+C. It cannot be combined with another
     hardware operation.
 
+--stream-system-telemetry
+    Continuously print schema-2 JSON Lines containing one complete Vcore,
+    CPU Tctl/Tdie, AMD RAPL package-power, and per-logical-processor
+    APERF/MPERF sample. The first hardware snapshot establishes the counter
+    baseline and is not emitted. This option requires --targets and cannot be
+    combined with another hardware operation.
+
+--targets <group:processor,...>
+    Set the complete Windows logical-processor target set for
+    --stream-system-telemetry. Pairs are unique and are emitted in canonical
+    group-then-processor order. Group is 0 through 65535 and processor is 0
+    through 63; Windows must accept every requested processor-group affinity.
+
 --diagnose-vcore
     Capture the selected Vcore reading plus raw Zen 4/5 SVI register
     candidates and decoded VID fields as one read-only JSON hardware report.
@@ -176,7 +189,8 @@ The framework-dependent publish directory is written to
 --interval-ms <milliseconds>
     Set the sampling interval. --stream-vcore and --diagnose-vcore allow 50
     through 60000 ms and default to 150 ms. --stream-telemetry allows 100
-    through 60000 ms and defaults to 500 ms.
+    through 60000 ms and defaults to 500 ms. --stream-system-telemetry allows
+    500 through 60000 ms and defaults to 500 ms.
 ```
 
 Run `ryzen-smu-cli.exe --help` for the canonical option descriptions. Multiple
@@ -239,6 +253,58 @@ record is emitted, the diagnostic goes to stderr, and the command exits with
 code 6. An unsupported Vcore or temperature mapping fails before the first
 stdout record with code 3.
 
+`--stream-system-telemetry` is a separate schema-2 protocol; the schema-1
+`--stream-telemetry` contract above is unchanged. Supply the complete live
+Windows logical topology explicitly:
+
+```powershell
+.\ryzen-smu-cli.exe --stream-system-telemetry --interval-ms 500 `
+  --targets 0:0,0:1,0:2,0:3
+```
+
+There is no header. The first complete raw snapshot establishes the APERF,
+MPERF, and package-energy baseline and emits no line. The second complete
+snapshot is sequence zero. Each later flushed line has this exact property
+order:
+
+```text
+kind, schemaVersion, sequence, elapsedMilliseconds, timestampUtc,
+measurementIntervalMilliseconds, acquisitionDurationMilliseconds,
+vcoreVolts, cpuTemperatureCelsius, temperatureSource, packagePowerWatts,
+packagePowerSource, targets
+```
+
+Each target has the exact order `group`, `processor`, `aperfDelta`,
+`mperfDelta`, `measurementIntervalMilliseconds`, `effectiveMhz`. A canonical
+example line is:
+
+```json
+{"kind":"system-telemetry","schemaVersion":2,"sequence":0,"elapsedMilliseconds":500,"timestampUtc":"2026-08-12T00:00:00.0000000\u002B00:00","measurementIntervalMilliseconds":500,"acquisitionDurationMilliseconds":4,"vcoreVolts":1.1875,"cpuTemperatureCelsius":71.875,"temperatureSource":"tctl-tdie","packagePowerWatts":100,"packagePowerSource":"amd-rapl-package-energy","targets":[{"group":0,"processor":0,"aperfDelta":1250000000,"mperfDelta":2000000000,"measurementIntervalMilliseconds":500,"effectiveMhz":2500},{"group":0,"processor":1,"aperfDelta":1125000000,"mperfDelta":2000000000,"measurementIntervalMilliseconds":500,"effectiveMhz":2250}]}
+```
+
+The default JSON encoder may represent the plus sign in the round-trip UTC
+offset as `\u002B`; after JSON decoding the timestamp is the ordinary
+`+00:00` form. Both top-level and target
+`measurementIntervalMilliseconds` are actual monotonic windows rounded to
+integer milliseconds, not copies of the requested cadence; a 500 ms request
+may produce 499 or 501. Package and target windows can differ, but their skew
+is bounded by half one requested cadence plus one millisecond of rounding.
+`effectiveMhz` is `APERF delta / target wall-clock interval / 1e6`, so
+it includes idle residency; `mperfDelta` is retained as independent counter
+evidence and is not used to relabel the value as an active-only clock.
+Package power is the 32-bit modular AMD RAPL package-energy delta divided by
+its monotonic interval.
+
+Every target is selected with Windows processor-group affinity before its
+read. The complete target set, Vcore, temperature, package energy, APERF, and
+MPERF must all be valid before stdout is touched. A missing target, rejected
+affinity, counter reset, implausible delta, acquisition lasting more than half
+the requested cadence, or measurement interval reaching three cadences stops
+the stream with code 6 and emits no partial line. At 500 ms this makes 1500 ms
+the stale boundary. Suspend/resume consumers must start a new process; its
+first raw snapshot creates a fresh baseline, so counters captured before
+sleep are never reused. Ctrl+C remains a successful cancellation.
+
 Capture a shareable Vcore qualification report without performing a write:
 
 ```powershell
@@ -291,6 +357,12 @@ Families `17h`, `19h`, and `1Ah`. Sentinel and implausible values are rejected;
 the decoder applies the legacy Ryzen/Threadripper Tctl reporting offsets used
 by ZenStates-Core. `--stream-telemetry` is available only when both this
 temperature source and the platform's Vcore mapping are available.
+
+The schema-2 system stream additionally requires readable AMD RAPL package-
+energy, APERF, and MPERF MSRs on every requested Windows processor target.
+These counters are accessed read-only through PawnIO. Support is determined by
+successful affinity and MSR reads at runtime; an unsupported or incomplete
+target set fails closed instead of returning estimated or cross-target data.
 
 The confidence shown by `--info` describes the telemetry mapping, not every
 CPU carrying that marketing family:
@@ -438,6 +510,7 @@ Additional documentation:
 - [Architecture](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/ARCHITECTURE.md)
 - [Release process](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/RELEASING.md)
 - [Security policy](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/SECURITY.md)
+- [v0.5.0 release notes](docs/releases/v0.5.0.md)
 - [v0.4.0 release notes](docs/releases/v0.4.0.md)
 - [v0.3.5 release notes](docs/releases/v0.3.5.md)
 - [v0.3.4 release notes](docs/releases/v0.3.4.md)

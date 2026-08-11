@@ -145,6 +145,42 @@ failure terminates with exit code 6, while an unsupported mapping returns code
 same missed-slot policy as the Vcore stream, keeping elapsed milliseconds
 strictly increasing without immediate catch-up records.
 
+## System telemetry
+
+`--stream-system-telemetry` leaves the schema-1 combined stream untouched and
+adds a distinct schema-2 JSON Lines contract. The caller supplies the complete
+Windows logical topology as unique `group:processor` targets. Parsing sorts
+that set canonically. The hardware adapter explicitly selects each Windows
+processor-group affinity, reads AMD APERF and MPERF on that logical processor,
+and restores the original affinity on every path. The first target also reads
+the package-scoped AMD RAPL power-unit and package-energy MSRs. Affinity
+selection or restoration failure invalidates the entire snapshot.
+
+Mapped Vcore and Tctl/Tdie are acquired in the same bounded sweep. Nothing is
+written to stdout until every source and every target succeeds. The first
+snapshot is a silent counter baseline. Later snapshots compute a modular
+32-bit RAPL energy delta and nonwrapping 64-bit APERF/MPERF deltas. Effective
+MHz is APERF delta divided by that target's actual monotonic wall interval;
+MPERF remains explicit counter evidence. This intentionally represents
+effective frequency including idle residency, not active-only frequency.
+
+The top-level and per-target `measurementIntervalMilliseconds` values are
+actual rounded monotonic intervals, not a copy of the requested cadence, so a
+500 ms request may legitimately produce 499 or 501. Each must be at least 1
+ms and below three requested cadences. Package and target timestamps are
+captured inside the same acquisition sweeps, each limited to half one cadence;
+therefore their interval skew is bounded by half one cadence (plus at most one
+millisecond of independent rounding). `acquisitionDurationMilliseconds`
+reports the current sweep and is bounded the same way.
+
+Counter rollback, an implausible frequency or package-power delta, target-set
+drift, a slow sweep, or a measurement interval reaching three cadences stops
+the stream with exit code 6 before a partial record is emitted. For the 500 ms
+default, 1500 ms is stale. A consumer must restart the process after system
+resume; the restarted process's first snapshot creates a new baseline and no
+pre-suspend counters are reused. This also gives an outer process supervisor a
+clear fail-closed boundary if a low-level read does not return promptly.
+
 ## Core coordinates
 
 The CLI exposes two distinct index spaces:

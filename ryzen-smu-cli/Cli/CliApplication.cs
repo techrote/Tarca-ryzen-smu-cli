@@ -177,6 +177,33 @@ internal static class CliApplication
             Description =
                 "Continuously print mapped Vcore and CPU Tctl/Tdie samples as JSON Lines.",
         };
+        Option<bool> streamSystemTelemetryOption =
+            new("--stream-system-telemetry")
+            {
+                Description =
+                    "Continuously print atomic Vcore, CPU Tctl/Tdie, AMD RAPL " +
+                    "package power, and per-target APERF/MPERF telemetry as " +
+                    "schema-2 JSON Lines.",
+            };
+        Option<string?> systemTelemetryTargetsOption = new("--targets")
+        {
+            Description =
+                "Set the complete Windows logical-processor targets for " +
+                "--stream-system-telemetry as group:processor pairs, for " +
+                "example 0:0,0:1,0:2,0:3.",
+        };
+        systemTelemetryTargetsOption.Validators.Add(result =>
+        {
+            string? value = result.GetValue(systemTelemetryTargetsOption);
+            if (value is not null &&
+                !SystemTelemetryTargetSet.TryParse(
+                    value,
+                    out _,
+                    out string? validationError))
+            {
+                result.AddError(validationError!);
+            }
+        });
         Option<bool> diagnoseVcoreOption = new("--diagnose-vcore")
         {
             Description =
@@ -222,7 +249,11 @@ internal static class CliApplication
                 $"{VcoreStreaming.DefaultIntervalMilliseconds}); --stream-telemetry " +
                 $"allows {CpuTelemetryStreaming.MinimumIntervalMilliseconds} through " +
                 $"{CpuTelemetryStreaming.MaximumIntervalMilliseconds} (default " +
-                $"{CpuTelemetryStreaming.DefaultIntervalMilliseconds}).",
+                $"{CpuTelemetryStreaming.DefaultIntervalMilliseconds}); " +
+                $"--stream-system-telemetry allows " +
+                $"{SystemTelemetryStreaming.MinimumIntervalMilliseconds} through " +
+                $"{SystemTelemetryStreaming.MaximumIntervalMilliseconds} (default " +
+                $"{SystemTelemetryStreaming.DefaultIntervalMilliseconds}).",
         };
         Option<bool> infoOption = new("--info")
         {
@@ -248,6 +279,8 @@ internal static class CliApplication
                 streamVcoreOption,
                 getCpuTemperatureOption,
                 streamTelemetryOption,
+                streamSystemTelemetryOption,
+                systemTelemetryTargetsOption,
                 diagnoseVcoreOption,
                 samplesOption,
                 intervalMillisecondsOption,
@@ -276,6 +309,8 @@ internal static class CliApplication
 
             bool streamVcore = WasSpecified(streamVcoreOption);
             bool streamTelemetry = WasSpecified(streamTelemetryOption);
+            bool streamSystemTelemetry =
+                WasSpecified(streamSystemTelemetryOption);
             bool diagnoseVcore = WasSpecified(diagnoseVcoreOption);
             var intervalResult = result.GetResult(intervalMillisecondsOption);
             if (intervalResult is { Implicit: false } &&
@@ -286,7 +321,19 @@ internal static class CliApplication
                     NumberStyles.None,
                     CultureInfo.InvariantCulture,
                     out int interval);
-                if (streamTelemetry &&
+                if (streamSystemTelemetry &&
+                    (!parsedInterval ||
+                     !SystemTelemetryStreaming.IsValidInterval(interval)))
+                {
+                    result.AddError(
+                        $"System telemetry stream interval must be a whole " +
+                        $"number from " +
+                        $"{SystemTelemetryStreaming.MinimumIntervalMilliseconds} " +
+                        $"through " +
+                        $"{SystemTelemetryStreaming.MaximumIntervalMilliseconds} " +
+                        "milliseconds.");
+                }
+                else if (streamTelemetry &&
                     (!parsedInterval ||
                      !CpuTelemetryStreaming.IsValidInterval(interval)))
                 {
@@ -297,6 +344,7 @@ internal static class CliApplication
                         "milliseconds.");
                 }
                 else if (!streamTelemetry &&
+                         !streamSystemTelemetry &&
                          (!parsedInterval ||
                           !VcoreStreaming.IsValidInterval(interval)))
                 {
@@ -311,10 +359,26 @@ internal static class CliApplication
             if (WasSpecified(intervalMillisecondsOption) &&
                 !streamVcore &&
                 !streamTelemetry &&
+                !streamSystemTelemetry &&
                 !diagnoseVcore)
             {
                 result.AddError(
-                    "--interval-ms requires --stream-vcore or --diagnose-vcore.");
+                    "--interval-ms requires --stream-vcore, --stream-telemetry, " +
+                    "--stream-system-telemetry, or --diagnose-vcore.");
+            }
+
+            if (streamSystemTelemetry &&
+                !WasSpecified(systemTelemetryTargetsOption))
+            {
+                result.AddError(
+                    "--stream-system-telemetry requires --targets.");
+            }
+
+            if (WasSpecified(systemTelemetryTargetsOption) &&
+                !streamSystemTelemetry)
+            {
+                result.AddError(
+                    "--targets requires --stream-system-telemetry.");
             }
 
             if (WasSpecified(samplesOption) && !diagnoseVcore)
@@ -337,6 +401,13 @@ internal static class CliApplication
                     "--stream-vcore and --stream-telemetry cannot be used together.");
             }
 
+            if (streamSystemTelemetry && (streamVcore || streamTelemetry))
+            {
+                result.AddError(
+                    "--stream-system-telemetry cannot be combined with another " +
+                    "streaming operation.");
+            }
+
             if (streamVcore &&
                 (WasSpecified(offsetOption) ||
                  WasSpecified(disableCoresOption) ||
@@ -349,6 +420,7 @@ internal static class CliApplication
                  WasSpecified(setFMaxOption) ||
                  WasSpecified(getFMaxOption) ||
                  WasSpecified(getCpuTemperatureOption) ||
+                 streamSystemTelemetry ||
                  WasSpecified(infoOption)))
             {
                 result.AddError(
@@ -369,6 +441,7 @@ internal static class CliApplication
                  WasSpecified(getVcoreOption) ||
                  WasSpecified(getCpuTemperatureOption) ||
                  diagnoseVcore ||
+                 streamSystemTelemetry ||
                  WasSpecified(infoOption)))
             {
                 result.AddError(
@@ -389,10 +462,32 @@ internal static class CliApplication
                  WasSpecified(getVcoreOption) ||
                  WasSpecified(getCpuTemperatureOption) ||
                  streamTelemetry ||
+                 streamSystemTelemetry ||
                  WasSpecified(infoOption)))
             {
                 result.AddError(
                     "--diagnose-vcore cannot be combined with another hardware operation.");
+            }
+
+            if (streamSystemTelemetry &&
+                (WasSpecified(offsetOption) ||
+                 WasSpecified(disableCoresOption) ||
+                 WasSpecified(enableAllCoresOption) ||
+                 WasSpecified(getOffsetsTerseOption) ||
+                 WasSpecified(getPhysicalCoresOption) ||
+                 WasSpecified(getEnabledCoresOption) ||
+                 WasSpecified(setPboScalarOption) ||
+                 WasSpecified(getPboScalarOption) ||
+                 WasSpecified(setFMaxOption) ||
+                 WasSpecified(getFMaxOption) ||
+                 WasSpecified(getVcoreOption) ||
+                 WasSpecified(getCpuTemperatureOption) ||
+                 diagnoseVcore ||
+                 WasSpecified(infoOption)))
+            {
+                result.AddError(
+                    "--stream-system-telemetry cannot be combined with another " +
+                    "hardware operation.");
             }
         });
 
@@ -446,6 +541,24 @@ internal static class CliApplication
                         : CpuTelemetryStreaming.DefaultIntervalMilliseconds;
             }
 
+            int? systemTelemetryStreamIntervalMilliseconds = null;
+            SystemTelemetryTargetSet? systemTelemetryTargets = null;
+            if (parseResult.GetValue(streamSystemTelemetryOption))
+            {
+                systemTelemetryStreamIntervalMilliseconds =
+                    int.TryParse(
+                        parseResult.GetValue(intervalMillisecondsOption),
+                        NumberStyles.None,
+                        CultureInfo.InvariantCulture,
+                        out int interval)
+                        ? interval
+                        : SystemTelemetryStreaming.DefaultIntervalMilliseconds;
+                SystemTelemetryTargetSet.TryParse(
+                    parseResult.GetValue(systemTelemetryTargetsOption),
+                    out systemTelemetryTargets,
+                    out _);
+            }
+
             CliRequest request = new(
                 offsetSpecification,
                 disabledCores,
@@ -472,6 +585,9 @@ internal static class CliApplication
                     parseResult.GetValue(getCpuTemperatureOption),
                 TelemetryStreamIntervalMilliseconds =
                     telemetryStreamIntervalMilliseconds,
+                SystemTelemetryStreamIntervalMilliseconds =
+                    systemTelemetryStreamIntervalMilliseconds,
+                SystemTelemetryTargets = systemTelemetryTargets,
                 VcoreDiagnosticSampleCount = int.TryParse(
                     parseResult.GetValue(samplesOption),
                     NumberStyles.None,

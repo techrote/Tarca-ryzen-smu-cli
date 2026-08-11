@@ -131,6 +131,13 @@ internal sealed class FakeRyzenController : IRyzenController
 
     public int CpuTemperatureReadCount { get; private set; }
 
+    public Func<IReadOnlyList<SystemTelemetryTarget>,
+        OperationResult<SystemTelemetryRawSnapshot>>?
+        ReadSystemTelemetrySnapshotHandler
+    { get; init; }
+
+    public int SystemTelemetryReadCount { get; private set; }
+
     public OperationResult<int> GetPboOffset(CoreAddress core)
     {
         OffsetReads.Add(core);
@@ -173,6 +180,16 @@ internal sealed class FakeRyzenController : IRyzenController
     {
         CpuTemperatureReadCount++;
         return GetCpuTemperatureHandler?.Invoke() ?? GetCpuTemperatureResult;
+    }
+
+    public OperationResult<SystemTelemetryRawSnapshot>
+        ReadSystemTelemetrySnapshot(
+            IReadOnlyList<SystemTelemetryTarget> targets)
+    {
+        SystemTelemetryReadCount++;
+        return ReadSystemTelemetrySnapshotHandler?.Invoke(targets) ??
+            OperationResult<SystemTelemetryRawSnapshot>.Fail(
+                "System telemetry fake was not configured.");
     }
 
     public IReadOnlyDictionary<uint, OperationResult<uint>>

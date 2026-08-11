@@ -58,6 +58,9 @@ internal interface IRyzenController : IDisposable
 
     OperationResult<double> GetCpuTemperature();
 
+    OperationResult<SystemTelemetryRawSnapshot> ReadSystemTelemetrySnapshot(
+        IReadOnlyList<SystemTelemetryTarget> targets);
+
     IReadOnlyDictionary<uint, OperationResult<uint>>
         ReadVcoreDiagnosticRegisters();
 

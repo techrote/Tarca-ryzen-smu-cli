@@ -43,6 +43,41 @@ try {
         --configuration $Configuration `
         --no-restore `
         --output $PublishDirectory
+
+    $projectPath = Join-Path $repositoryRoot `
+        "ryzen-smu-cli\ryzen-smu-cli.csproj"
+    $versionNode = Select-Xml -LiteralPath $projectPath `
+        -XPath "/Project/PropertyGroup/Version" |
+        Select-Object -First 1
+    if ($null -eq $versionNode) {
+        throw "The project does not define a Version property."
+    }
+
+    $expectedVersion = $versionNode.Node.InnerText
+    $publishedExecutable = Join-Path $PublishDirectory "ryzen-smu-cli.exe"
+    $versionOutput = @(& $publishedExecutable --version 2>&1)
+    if ($LASTEXITCODE -ne 0 -or
+        ($versionOutput -join "`n") -notmatch
+            [Regex]::Escape($expectedVersion)) {
+        throw (
+            "Published --version output does not contain project version " +
+            "'$expectedVersion'.")
+    }
+
+    $helpOutput = @(& $publishedExecutable --help 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Published --help failed with exit code $LASTEXITCODE."
+    }
+
+    $helpText = $helpOutput -join "`n"
+    foreach ($requiredOption in @(
+            "--stream-telemetry",
+            "--stream-system-telemetry",
+            "--targets")) {
+        if ($helpText -notmatch [Regex]::Escape($requiredOption)) {
+            throw "Published --help is missing '$requiredOption'."
+        }
+    }
 }
 finally {
     Pop-Location

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 
@@ -18,6 +19,12 @@ public sealed class CriticalSafetyTests
             ["--stream-vcore", "--get-vcore"],
             ["--stream-telemetry", "--interval-ms", "99"],
             ["--stream-telemetry", "--get-cpu-temperature"],
+            ["--stream-system-telemetry", "--interval-ms", "499", "--targets", "0:0"],
+            ["--stream-system-telemetry", "--interval-ms", "500"],
+            ["--stream-system-telemetry", "--targets", "0:0,0:0"],
+            ["--stream-system-telemetry", "--targets", "0:64"],
+            ["--targets", "0:0"],
+            ["--stream-system-telemetry", "--stream-telemetry", "--targets", "0:0"],
             ["--diagnose-vcore", "--samples", "0"],
         ];
 
@@ -346,6 +353,174 @@ public sealed class CriticalSafetyTests
         Assert.Equal(
             "tctl-tdie",
             root.GetProperty("temperatureSource").GetString());
+
+        Assert.True(SystemTelemetryTargetSet.TryParse(
+            "0:1,0:0",
+            out SystemTelemetryTargetSet? targetSet,
+            out string? targetsError), targetsError);
+        Assert.Equal(
+            [new SystemTelemetryTarget(0, 0), new SystemTelemetryTarget(0, 1)],
+            targetSet!.Targets);
+
+        using CancellationTokenSource systemCancellationSource = new();
+        int rawReadCount = 0;
+        FakeRyzenController systemController = new(
+            8,
+            Enumerable.Range(0, 8))
+        {
+            ReadSystemTelemetrySnapshotHandler = targets =>
+            {
+                rawReadCount++;
+                if (rawReadCount == 2)
+                {
+                    systemCancellationSource.Cancel();
+                }
+
+                return OperationResult<SystemTelemetryRawSnapshot>.Ok(
+                    CreateSystemTelemetrySnapshot(
+                        rawReadCount == 1 ? 0 : 500,
+                        rawReadCount == 1 ? 0xFFFFFF00u : 0x0031FF00u,
+                        rawReadCount == 1 ? 1_000UL : 1_250_001_000UL,
+                        rawReadCount == 1 ? 2_000UL : 2_000_002_000UL,
+                        rawReadCount == 1 ? 3_000UL : 1_125_003_000UL,
+                        rawReadCount == 1 ? 4_000UL : 2_000_004_000UL,
+                        targets));
+            },
+        };
+        StringWriter systemOutput = new();
+        int systemExitCode = CreateRunnerWithCancellation(
+            systemController,
+            systemOutput,
+            systemCancellationSource.Token).Execute(
+                EmptyRequest() with
+                {
+                    SystemTelemetryStreamIntervalMilliseconds = 500,
+                    SystemTelemetryTargets = targetSet,
+                });
+
+        Assert.Equal((int)ExitCode.Success, systemExitCode);
+        Assert.Equal(2, systemController.SystemTelemetryReadCount);
+        string systemLine = Assert.Single(systemOutput
+            .ToString()
+            .Split(
+                Environment.NewLine,
+                StringSplitOptions.RemoveEmptyEntries));
+        using JsonDocument systemDocument = JsonDocument.Parse(systemLine);
+        JsonElement systemRoot = systemDocument.RootElement;
+        Assert.Equal(
+            [
+                "kind",
+                "schemaVersion",
+                "sequence",
+                "elapsedMilliseconds",
+                "timestampUtc",
+                "measurementIntervalMilliseconds",
+                "acquisitionDurationMilliseconds",
+                "vcoreVolts",
+                "cpuTemperatureCelsius",
+                "temperatureSource",
+                "packagePowerWatts",
+                "packagePowerSource",
+                "targets",
+            ],
+            systemRoot.EnumerateObject().Select(property => property.Name));
+        Assert.Equal(
+            SystemTelemetryStreamSample.RecordKind,
+            systemRoot.GetProperty("kind").GetString());
+        Assert.Equal(
+            SystemTelemetryStreamSample.CurrentSchemaVersion,
+            systemRoot.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(0, systemRoot.GetProperty("sequence").GetInt64());
+        Assert.Equal(
+            500,
+            systemRoot.GetProperty("measurementIntervalMilliseconds").GetInt64());
+        Assert.Equal(
+            4,
+            systemRoot.GetProperty("acquisitionDurationMilliseconds").GetInt64());
+        Assert.Equal(
+            100.0,
+            systemRoot.GetProperty("packagePowerWatts").GetDouble(),
+            precision: 6);
+        Assert.Equal(
+            SystemTelemetryStreaming.PackagePowerSource,
+            systemRoot.GetProperty("packagePowerSource").GetString());
+        JsonElement[] systemTargets = systemRoot
+            .GetProperty("targets")
+            .EnumerateArray()
+            .ToArray();
+        Assert.Equal(2, systemTargets.Length);
+        Assert.Equal(
+            [
+                "group",
+                "processor",
+                "aperfDelta",
+                "mperfDelta",
+                "measurementIntervalMilliseconds",
+                "effectiveMhz",
+            ],
+            systemTargets[0]
+                .EnumerateObject()
+                .Select(property => property.Name));
+        Assert.Equal(0, systemTargets[0].GetProperty("group").GetUInt16());
+        Assert.Equal(0, systemTargets[0].GetProperty("processor").GetByte());
+        Assert.Equal(
+            1_250_000_000UL,
+            systemTargets[0].GetProperty("aperfDelta").GetUInt64());
+        Assert.Equal(
+            2_000_000_000UL,
+            systemTargets[0].GetProperty("mperfDelta").GetUInt64());
+        Assert.Equal(
+            2_500.0,
+            systemTargets[0].GetProperty("effectiveMhz").GetDouble(),
+            precision: 6);
+
+        const string golden =
+            "{\"kind\":\"system-telemetry\",\"schemaVersion\":2," +
+            "\"sequence\":0,\"elapsedMilliseconds\":500," +
+            "\"timestampUtc\":\"2026-08-12T00:00:00.0000000\\u002B00:00\"," +
+            "\"measurementIntervalMilliseconds\":500," +
+            "\"acquisitionDurationMilliseconds\":4," +
+            "\"vcoreVolts\":1.1875,\"cpuTemperatureCelsius\":71.875," +
+            "\"temperatureSource\":\"tctl-tdie\"," +
+            "\"packagePowerWatts\":100," +
+            "\"packagePowerSource\":\"amd-rapl-package-energy\"," +
+            "\"targets\":[{\"group\":0,\"processor\":0," +
+            "\"aperfDelta\":1250000000,\"mperfDelta\":2000000000," +
+            "\"measurementIntervalMilliseconds\":500," +
+            "\"effectiveMhz\":2500},{\"group\":0,\"processor\":1," +
+            "\"aperfDelta\":1125000000,\"mperfDelta\":2000000000," +
+            "\"measurementIntervalMilliseconds\":500," +
+            "\"effectiveMhz\":2250}]}";
+        SystemTelemetryStreamSample goldenSample = new(
+            SystemTelemetryStreamSample.RecordKind,
+            SystemTelemetryStreamSample.CurrentSchemaVersion,
+            0,
+            500,
+            "2026-08-12T00:00:00.0000000+00:00",
+            500,
+            4,
+            1.1875,
+            71.875,
+            CpuTemperatureTelemetry.PublicSourceName,
+            100.0,
+            SystemTelemetryStreaming.PackagePowerSource,
+            [
+                new SystemTelemetryTargetStreamSample(
+                    0,
+                    0,
+                    1_250_000_000,
+                    2_000_000_000,
+                    500,
+                    2_500.0),
+                new SystemTelemetryTargetStreamSample(
+                    0,
+                    1,
+                    1_125_000_000,
+                    2_000_000_000,
+                    500,
+                    2_250.0),
+            ]);
+        Assert.Equal(golden, JsonSerializer.Serialize(goldenSample));
     }
 
     [Fact]
@@ -402,6 +577,96 @@ public sealed class CriticalSafetyTests
         Assert.Contains(
             "temperature telemetry refresh failed",
             temperatureError.ToString());
+
+        Assert.True(SystemTelemetryTargetSet.TryParse(
+            "0:0,0:1",
+            out SystemTelemetryTargetSet? targets,
+            out string? targetError), targetError);
+        FakeRyzenController systemFailureController = new(
+            8,
+            Enumerable.Range(0, 8))
+        {
+            ReadSystemTelemetrySnapshotHandler = _ =>
+                OperationResult<SystemTelemetryRawSnapshot>.Fail(
+                    "APERF target read failed"),
+        };
+        StringWriter systemFailureOutput = new();
+        StringWriter systemFailureError = new();
+        int systemFailureExitCode = CreateRunner(
+            systemFailureController,
+            systemFailureOutput,
+            systemFailureError).Execute(
+                EmptyRequest() with
+                {
+                    SystemTelemetryStreamIntervalMilliseconds = 500,
+                    SystemTelemetryTargets = targets,
+                });
+        Assert.Equal((int)ExitCode.OperationFailed, systemFailureExitCode);
+        Assert.Equal(string.Empty, systemFailureOutput.ToString());
+        Assert.Contains("APERF target read failed", systemFailureError.ToString());
+
+        SystemTelemetryAccumulator resetAccumulator = new(500, targets!.Targets);
+        SystemTelemetryRawSnapshot baseline = CreateSystemTelemetrySnapshot(
+            0,
+            100,
+            100,
+            100,
+            100,
+            100,
+            targets.Targets);
+        Assert.True(resetAccumulator.Observe(baseline).IsBaseline);
+        SystemTelemetryRawSnapshot reset = CreateSystemTelemetrySnapshot(
+            500,
+            200,
+            99,
+            101,
+            101,
+            101,
+            targets.Targets);
+        SystemTelemetryObservation resetObservation =
+            resetAccumulator.Observe(reset);
+        Assert.False(resetObservation.Success);
+        Assert.Contains("reset", resetObservation.Error);
+
+        SystemTelemetryAccumulator staleAccumulator = new(500, targets.Targets);
+        Assert.True(staleAccumulator.Observe(baseline).IsBaseline);
+        SystemTelemetryRawSnapshot stale = CreateSystemTelemetrySnapshot(
+            1_500,
+            200,
+            200,
+            200,
+            200,
+            200,
+            targets.Targets);
+        SystemTelemetryObservation staleObservation =
+            staleAccumulator.Observe(stale);
+        Assert.False(staleObservation.Success);
+        Assert.Contains("stale", staleObservation.Error);
+
+        SystemTelemetryAccumulator slowAccumulator = new(500, targets.Targets);
+        SystemTelemetryRawSnapshot slow = baseline with
+        {
+            AcquisitionCompletedTimestamp = Timestamp(300),
+        };
+        SystemTelemetryObservation slowObservation =
+            slowAccumulator.Observe(slow);
+        Assert.False(slowObservation.Success);
+        Assert.Contains("half", slowObservation.Error);
+
+        SystemTelemetryAccumulator identityAccumulator =
+            new(500, targets.Targets);
+        SystemTelemetryRawSnapshot wrongIdentity = baseline with
+        {
+            Targets =
+            [
+                baseline.Targets[1],
+                baseline.Targets[0],
+            ],
+        };
+        SystemTelemetryObservation identityObservation =
+            identityAccumulator.Observe(wrongIdentity);
+        Assert.False(identityObservation.Success);
+        Assert.Contains("identity", identityObservation.Error);
     }
 
     [Fact]
@@ -640,4 +905,39 @@ public sealed class CriticalSafetyTests
             MidpointRounding.AwayFromZero));
         return checked(eighthDegrees << 21);
     }
+
+    private static SystemTelemetryRawSnapshot CreateSystemTelemetrySnapshot(
+        int startMilliseconds,
+        uint packageEnergy,
+        ulong firstAperf,
+        ulong firstMperf,
+        ulong secondAperf,
+        ulong secondMperf,
+        IReadOnlyList<SystemTelemetryTarget> targets)
+    {
+        Assert.Equal(2, targets.Count);
+        return new SystemTelemetryRawSnapshot(
+            Timestamp(startMilliseconds),
+            Timestamp(startMilliseconds + 4),
+            1.1875,
+            71.875,
+            16,
+            packageEnergy,
+            Timestamp(startMilliseconds + 1),
+            [
+                new SystemTelemetryTargetRawReading(
+                    targets[0],
+                    firstAperf,
+                    firstMperf,
+                    Timestamp(startMilliseconds + 2)),
+                new SystemTelemetryTargetRawReading(
+                    targets[1],
+                    secondAperf,
+                    secondMperf,
+                    Timestamp(startMilliseconds + 3)),
+            ]);
+    }
+
+    private static long Timestamp(int milliseconds) =>
+        checked(Stopwatch.Frequency * (long)milliseconds / 1000L);
 }

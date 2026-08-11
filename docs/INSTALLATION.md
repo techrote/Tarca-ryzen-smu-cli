@@ -52,6 +52,21 @@ Extract the new release into a new directory. Do not copy only the executable:
 compatible PawnIO installation does not need to be reinstalled for every
 ryzen-smu-cli update.
 
+## System telemetry consumers
+
+The schema-2 system stream requires an Administrator PowerShell and a complete
+Windows `group:processor` target list. It briefly pins its worker thread to
+each requested logical processor while reading APERF/MPERF, then restores the
+previous affinity. AMD RAPL package energy, mapped Vcore, Tctl/Tdie, and every
+target must all be readable; a failure stops the stream instead of returning a
+partial topology.
+
+Do not preserve a running stream across Windows suspend/resume. Stop and start
+a new process after resume. The new process consumes one silent baseline
+snapshot before sequence zero, ensuring that pre-suspend counter values are
+not used. At the 500 ms default, an actual measurement interval reaching 1500
+ms is also rejected as stale.
+
 ## Troubleshooting
 
 ### PawnIO is required but is not installed
