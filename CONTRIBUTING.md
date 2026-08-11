@@ -39,6 +39,16 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass \
 The helper restores packages, builds Release, runs all tests, and creates the
 framework-dependent win-x64 publish directory under `artifacts`.
 
+## Test budget
+
+The automated suite is a closed allowlist of 13 critical `[Fact]` scenarios.
+Read the root `AGENTS.md` before changing tests. A feature, bug fix, refactor,
+documentation change, or coverage request does not authorize a new test.
+Without explicit user approval, do not add a test file, method, case, data row,
+`[Theory]`, or `[InlineData]`. Even when approved, merge or replace an existing
+critical scenario so the total remains 13 unless the user separately approves
+raising the budget.
+
 Release archives can be reproduced locally with:
 
 ```powershell
@@ -47,8 +57,8 @@ Release archives can be reproduced locally with:
 
 Before opening a pull request:
 
-1. Add or update tests for parsing, topology, mapping, exit codes, and failed
-   hardware results.
+1. Confirm the closed 13-scenario allowlist remains intact and no unapproved
+   test entry or parameter matrix was added.
 2. Run `dotnet format --verify-no-changes`.
 3. Run `git diff --check`.
 4. Confirm that `inpoutx64.dll` is present beside the published executable and
