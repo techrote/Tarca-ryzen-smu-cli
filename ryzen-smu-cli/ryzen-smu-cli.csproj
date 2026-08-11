@@ -6,7 +6,7 @@
     <RootNamespace>ryzen_smu_cli</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>0.4.0</Version>
+    <Version>0.5.0</Version>
     <LangVersion>12</LangVersion>
     <Authors>Terry577 and contributors</Authors>
     <Description>Windows CLI for selected AMD Ryzen SMU operations.</Description>

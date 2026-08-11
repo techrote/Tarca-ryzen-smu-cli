@@ -7,6 +7,32 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-12
+
+### Added
+
+- `--stream-system-telemetry --targets group:processor,...` for one atomic,
+  schema-2 JSON Lines stream containing mapped Vcore, CPU Tctl/Tdie, AMD RAPL
+  package power, and per-target APERF/MPERF deltas with effective MHz.
+- Explicit Windows processor-group affinity for every logical-processor MSR
+  read, with deterministic target sorting and duplicate rejection.
+
+### Changed
+
+- System telemetry establishes a silent first-snapshot baseline, reports only
+  complete samples, accepts 500 through 60000 ms, and fails closed on target,
+  counter, timing, or sensor inconsistency. A 500 ms stream treats a 1500 ms
+  interval as stale so suspend/resume data cannot reuse a pre-sleep baseline.
+- Release and package guards verify the v0.5.0 project version, documented
+  schema-2 command, and parser-only binary help/version paths.
+
+### Compatibility
+
+- The existing `--stream-telemetry` schema-1 field set and ordering are
+  byte-contract compatible with v0.4.0. Schema 2 is available only through the
+  new command and requires all explicitly supplied processor targets to
+  support read-only AMD RAPL, APERF, and MPERF access.
+
 ## [0.4.0] - 2026-08-10
 
 ### Added
@@ -336,7 +362,8 @@ update over 0.1.3.
 
 - Initial tagged CLI release based on ZenStates-Core.
 
-[Unreleased]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.5...v0.4.0
 [0.3.5]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.3...v0.3.4

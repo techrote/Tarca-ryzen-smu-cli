@@ -1,9 +1,16 @@
+using System.Diagnostics;
+using OpenHardwareMonitor.Hardware;
 using ZenStates.Core;
 
 namespace ryzen_smu_cli;
 
 internal sealed class ZenStatesRyzenController : IRyzenController
 {
+    private const uint MsrPowerUnit = 0xC0010299;
+    private const uint MsrPackageEnergyStatus = 0xC001029B;
+    private const uint MsrMperfReadOnly = 0xC00000E7;
+    private const uint MsrAperfReadOnly = 0xC00000E8;
+
     private readonly Cpu _cpu;
     private readonly int _ccdCount;
     private readonly int _physicalCoreSlots;
@@ -661,6 +668,214 @@ internal sealed class ZenStatesRyzenController : IRyzenController
                 $"telemetry: {ex.Message}");
         }
     }
+
+    public OperationResult<SystemTelemetryRawSnapshot>
+        ReadSystemTelemetrySnapshot(
+            IReadOnlyList<SystemTelemetryTarget> targets)
+    {
+        ArgumentNullException.ThrowIfNull(targets);
+        if (!SystemTelemetryTargetSet.IsCanonical(targets))
+        {
+            return OperationResult<SystemTelemetryRawSnapshot>.Fail(
+                "System telemetry targets must be unique and in canonical order.");
+        }
+
+        long acquisitionStartedTimestamp = Stopwatch.GetTimestamp();
+        OperationResult<double> vcore = GetVcore();
+        if (!vcore.Success)
+        {
+            return OperationResult<SystemTelemetryRawSnapshot>.Fail(
+                vcore.Error ?? "Vcore telemetry refresh failed.");
+        }
+
+        OperationResult<double> temperature = GetCpuTemperature();
+        if (!temperature.Success)
+        {
+            return OperationResult<SystemTelemetryRawSnapshot>.Fail(
+                temperature.Error ?? "CPU temperature telemetry refresh failed.");
+        }
+
+        int packageEnergyUnitExponent = 0;
+        uint packageEnergy = 0;
+        long packageEnergyTimestamp = 0;
+        List<SystemTelemetryTargetRawReading> readings =
+            new(targets.Count);
+        for (int index = 0; index < targets.Count; index++)
+        {
+            OperationResult<SystemTelemetryAffinityReading> reading =
+                ReadSystemTelemetryMsrs(
+                    targets[index],
+                    includePackageEnergy: index == 0);
+            if (!reading.Success)
+            {
+                return OperationResult<SystemTelemetryRawSnapshot>.Fail(
+                    reading.Error ??
+                    $"Failed to read target {targets[index]} telemetry.");
+            }
+
+            SystemTelemetryAffinityReading value = reading.Value!;
+            if (index == 0)
+            {
+                packageEnergyUnitExponent =
+                    value.PackageEnergyUnitExponent!.Value;
+                packageEnergy = value.PackageEnergy!.Value;
+                packageEnergyTimestamp =
+                    value.PackageEnergyTimestamp!.Value;
+            }
+
+            readings.Add(new SystemTelemetryTargetRawReading(
+                targets[index],
+                value.Aperf,
+                value.Mperf,
+                value.TargetTimestamp));
+        }
+
+        return OperationResult<SystemTelemetryRawSnapshot>.Ok(
+            new SystemTelemetryRawSnapshot(
+                acquisitionStartedTimestamp,
+                Stopwatch.GetTimestamp(),
+                vcore.Value,
+                temperature.Value,
+                packageEnergyUnitExponent,
+                packageEnergy,
+                packageEnergyTimestamp,
+                readings));
+    }
+
+    private OperationResult<SystemTelemetryAffinityReading>
+        ReadSystemTelemetryMsrs(
+            SystemTelemetryTarget target,
+            bool includePackageEnergy)
+    {
+        GroupAffinity desired = GroupAffinity.Single(
+            target.Group,
+            target.Processor);
+        GroupAffinity previous;
+        try
+        {
+            previous = ThreadAffinity.Set(desired);
+        }
+        catch (Exception ex)
+        {
+            return OperationResult<SystemTelemetryAffinityReading>.Fail(
+                $"Failed to select Windows processor target {target}: " +
+                ex.Message);
+        }
+
+        if (previous == GroupAffinity.Undefined)
+        {
+            return OperationResult<SystemTelemetryAffinityReading>.Fail(
+                $"Windows rejected processor-group affinity target {target}.");
+        }
+
+        SystemTelemetryAffinityReading? reading = null;
+        string? readError = null;
+        try
+        {
+            int? energyUnitExponent = null;
+            uint? packageEnergy = null;
+            long? packageTimestamp = null;
+            if (includePackageEnergy)
+            {
+                if (!TryReadMsr(MsrPowerUnit, out ulong powerUnit))
+                {
+                    readError =
+                        "PawnIO failed to read AMD RAPL power-unit MSR " +
+                        $"0x{MsrPowerUnit:X8} on target {target}.";
+                }
+                else if (!TryReadMsr(
+                             MsrPackageEnergyStatus,
+                             out ulong packageEnergyValue))
+                {
+                    readError =
+                        "PawnIO failed to read AMD RAPL package-energy MSR " +
+                        $"0x{MsrPackageEnergyStatus:X8} on target {target}.";
+                }
+                else
+                {
+                    energyUnitExponent =
+                        checked((int)((powerUnit >> 8) & 0x1F));
+                    packageEnergy = unchecked((uint)packageEnergyValue);
+                    packageTimestamp = Stopwatch.GetTimestamp();
+                }
+            }
+
+            ulong aperf = 0;
+            ulong mperf = 0;
+            if (readError is null &&
+                !TryReadMsr(MsrAperfReadOnly, out aperf))
+            {
+                readError =
+                    $"PawnIO failed to read APERF MSR 0x{MsrAperfReadOnly:X8} " +
+                    $"on target {target}.";
+            }
+
+            if (readError is null &&
+                !TryReadMsr(MsrMperfReadOnly, out mperf))
+            {
+                readError =
+                    $"PawnIO failed to read MPERF MSR 0x{MsrMperfReadOnly:X8} " +
+                    $"on target {target}.";
+            }
+
+            if (readError is null)
+            {
+                reading = new SystemTelemetryAffinityReading(
+                    aperf,
+                    mperf,
+                    Stopwatch.GetTimestamp(),
+                    energyUnitExponent,
+                    packageEnergy,
+                    packageTimestamp);
+            }
+        }
+        catch (Exception ex)
+        {
+            readError =
+                $"Failed to read system telemetry on target {target}: " +
+                ex.Message;
+        }
+        finally
+        {
+            try
+            {
+                if (ThreadAffinity.Set(previous) == GroupAffinity.Undefined)
+                {
+                    readError =
+                        $"Failed to restore thread affinity after reading " +
+                        $"target {target}.";
+                }
+            }
+            catch (Exception ex)
+            {
+                readError =
+                    $"Failed to restore thread affinity after reading target " +
+                    $"{target}: {ex.Message}";
+            }
+        }
+
+        return readError is null && reading is not null
+            ? OperationResult<SystemTelemetryAffinityReading>.Ok(reading)
+            : OperationResult<SystemTelemetryAffinityReading>.Fail(
+                readError ?? $"System telemetry target {target} returned no data.");
+    }
+
+    private bool TryReadMsr(uint index, out ulong value)
+    {
+        uint eax = 0;
+        uint edx = 0;
+        bool success = _cpu.ReadMsr(index, ref eax, ref edx);
+        value = ((ulong)edx << 32) | eax;
+        return success;
+    }
+
+    private sealed record SystemTelemetryAffinityReading(
+        ulong Aperf,
+        ulong Mperf,
+        long TargetTimestamp,
+        int? PackageEnergyUnitExponent,
+        uint? PackageEnergy,
+        long? PackageEnergyTimestamp);
 
     private OperationResult<double> ReadSviTfnVcore(
         SviTfnVcoreTelemetry layout)

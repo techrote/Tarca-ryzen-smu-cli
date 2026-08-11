@@ -18,7 +18,13 @@ tags. GitHub Actions is the only supported publisher.
    .\scripts\PackageRelease.ps1 -Version X.Y.Z
    ```
 
-6. Run the elevated read-only smoke test on supported AMD hardware.
+   `Test.ps1` runs only parser-safe binary smoke checks (`--help` and
+   `--version`) after the normal 13-scenario suite and publish. Packaging also
+   verifies that the supplied version equals the project version and that the
+   shipped README/changelog contain the schema-2 system-telemetry contract.
+6. Run the elevated read-only smoke test on supported AMD hardware. For v0.5.0
+   or later, separately verify schema 2 against the live Windows logical
+   topology; do not add it to unattended CI because it reads privileged MSRs.
 7. Verify both archives on a clean Windows installation when practical.
 
 ## Publish
