@@ -53,6 +53,17 @@ public sealed class CriticalSafetyTests
             Assert.NotEqual((int)ExitCode.Success, exitCode);
             Assert.Equal(0, factoryCalls);
         }
+
+        FakeRyzenController directController = new(
+            8,
+            Enumerable.Range(0, 8));
+        int directExitCode = CreateRunner(directController).Execute(
+            EmptyRequest() with { PptWatts = 0 });
+
+        Assert.Equal((int)ExitCode.InvalidInput, directExitCode);
+        Assert.Empty(directController.PptWrites);
+        Assert.Empty(directController.TdcWrites);
+        Assert.Empty(directController.EdcWrites);
     }
 
     [Fact]
