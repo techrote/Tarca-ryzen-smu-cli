@@ -1121,6 +1121,25 @@ internal sealed class CommandRunner
             return (int)ExitCode.InitializationFailed;
         }
 
+        foreach ((uint? value, string name, string unit) in new[]
+                 {
+                     (request.PptWatts, "PPT", "W"),
+                     (request.TdcAmps, "TDC", "A"),
+                     (request.EdcAmps, "EDC", "A"),
+                 })
+        {
+            if (value is not null &&
+                (value < CliRequest.MinimumPowerLimitValue ||
+                 value > CliRequest.MaximumPowerLimitValue))
+            {
+                _error.WriteLine(
+                    $"{name} must be between " +
+                    $"{CliRequest.MinimumPowerLimitValue} and " +
+                    $"{CliRequest.MaximumPowerLimitValue} {unit}.");
+                return (int)ExitCode.InvalidInput;
+            }
+        }
+
         if (request.PptWatts is not null && !controller.CanWritePptLimit)
         {
             _error.WriteLine(
