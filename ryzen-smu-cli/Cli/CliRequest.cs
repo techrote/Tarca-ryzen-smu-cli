@@ -26,6 +26,12 @@ internal sealed record CliRequest(
 
     public uint? EdcAmps { get; init; }
 
+    public bool GetPptLimit { get; init; }
+
+    public bool GetTdcLimit { get; init; }
+
+    public bool GetEdcLimit { get; init; }
+
     public bool DiagnoseVcore { get; init; }
 
     public bool GetCpuTemperature { get; init; }
@@ -60,6 +66,9 @@ internal sealed record CliRequest(
         PptWatts is not null ||
         TdcAmps is not null ||
         EdcAmps is not null ||
+        GetPptLimit ||
+        GetTdcLimit ||
+        GetEdcLimit ||
         FMax is not null ||
         GetFMax ||
         GetVcore ||
