@@ -48,8 +48,8 @@ ZenStates-Core/PawnIO path.
 
 The operator tested multiple PPT setpoints and observed HWiNFO package-power
 telemetry settling almost exactly 2 W above the requested Tarca setpoint under
-load. The highest requested PPT tested was 84 W; testing above 84 W was
-intentionally stopped for thermal reasons.
+load. A later manual 92 W PPT setting produced about 60 C under the operator's
+real workload and was retained for the readback qualification below.
 
 The approximately +2 W observation is **live package-power telemetry**, not a
 direct readback of the configured PPT limit. It may reflect measurement
@@ -83,6 +83,26 @@ Current FMax: 4650 MHz.
 These are post-write observations. Without a same-session pre-write baseline,
 they are not by themselves proof that PBO scalar or FMax were unchanged.
 
+## Configured-PPT readback qualification
+
+With PPT manually configured to 92 W, the first TARCA-002 implementation
+observed two different values:
+
+```text
+ZenStates-Core GetSystemPowerLimit(): 65 W
+PM table 0x00380905 d[0]:             92 W
+```
+
+The PM-table value matched the actual applied PPT setting exactly. The
+ZenStates-Core `GetSystemPowerLimit()` result did not track the runtime PPT
+override on this Vermeer firmware and therefore cannot be used as a live
+configured-PPT cross-check.
+
+This physically qualifies PM-table `d[0]` as the configured PPT readback for
+the exact identity recorded above. Tarca must not reject a valid `d[0]`
+reading merely because `GetSystemPowerLimit()` returns the nominal/system
+65 W value.
+
 ## Qualification boundary
 
 Qualified:
@@ -91,20 +111,21 @@ Qualified:
 - `--set-ppt` is accepted by the SMU.
 - Requested PPT changes produce corresponding bounded changes in observed
   package-power behavior.
-- PPT requests through 84 W were physically exercised.
+- PPT requests through 92 W were physically exercised.
+- configured PPT readback at PM-table `d[0]` is physically write/readback
+  qualified at 92 W for this exact platform identity.
 
 Not yet qualified:
 
-- direct configured-PPT readback;
 - `--set-tdc` physical behavior;
 - `--set-edc` physical behavior;
 - a Vermeer Vcore mapping for PM table `0x00380905`;
-- operation above 84 W on this machine;
+- operation above 92 W on this machine;
 - other Vermeer boards, BIOS/AGESA revisions, or CPUs.
 
 ## Follow-up
 
-See TARCA-002 for configured-limit readback and Vermeer PM-table qualification.
-A readback implementation must distinguish configured PPT/TDC/EDC limits from
-live package-power/current telemetry and must not infer a configured limit by
-subtracting the observed approximately 2 W difference.
+See TARCA-002 for configured TDC/EDC qualification. Configured-limit readback
+must remain distinct from live package-power/current telemetry and must not
+infer a configured limit by subtracting the observed approximately 2 W
+difference.
