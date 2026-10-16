@@ -7,6 +7,23 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Independent `--set-ppt <watts>`, `--set-tdc <amps>`, and
+  `--set-edc <amps>` runtime SMU controls with whole-number 1-500 W/A input
+  validation before hardware initialization.
+- Vermeer / Ryzen 5000 desktop power-limit wiring through the existing
+  ZenStates-Core and signed PawnIO access path, without raw mailbox commands in
+  the CLI.
+
+### Safety
+
+- Each power-limit option writes only its requested limit; unrelated Curve
+  Optimizer, PBO scalar, FMax, voltage, and other settings are unchanged unless
+  separately requested.
+- Automated tests remain within the fixed 13-Fact allowlist and never perform
+  real SMU hardware writes. Physical 5600X qualification remains outstanding.
+
 ## [0.5.0] - 2026-08-12
 
 ### Added
