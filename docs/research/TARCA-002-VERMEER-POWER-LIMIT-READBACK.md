@@ -18,7 +18,7 @@ recorded in
 Tarca admits the PM-table mapping only when all five identity fields match.
 It does not select the layout by marketing name.
 
-## Independent PPT query
+## ZenStates system-power query: negative control
 
 Tarca pins ZenStates-Core commit
 `999cdb6dec5ccb6dcde37a02ad1d6d878cb55cbf`.
@@ -29,12 +29,17 @@ That exact dependency contains
 `Zen2Settings`, whose MP1 mailbox defines
 `SMU_MSG_GetSustainedPowerAndThmLimit = 0x23`.
 
-ZenStates-Core decodes the returned configured power limit from bits 23:16 of
-the first response word. TARCA-002 uses this as an independent configured-PPT
-query. A PPT read is accepted only when that query succeeds and exactly agrees
-with the PPT limit decoded from the PM table.
+ZenStates-Core decodes a power value from bits 23:16 of the first response
+word. TARCA-002 initially treated that value as an independent configured-PPT
+query.
 
-This query does **not** provide configured TDC or EDC.
+Physical hardware disproved that interpretation on the qualified 5600X:
+with runtime PPT manually set to 92 W, PM-table `d[0]` read exactly 92 W
+while `GetSystemPowerLimit()` returned 65 W. The latter therefore does not
+track the active runtime PPT override on this Vermeer firmware.
+
+Tarca retains this mismatch as a negative control and does **not** use
+`GetSystemPowerLimit()` to validate or reject configured-PPT readback.
 
 ## PM-table limit indices
 
@@ -65,9 +70,9 @@ front-of-table region is present while deliberately declining to label the
 constant limit pool without a write-back discriminator. That project
 independently confirms `d[1]` as live socket/package-power telemetry.
 
-Tarca has the missing discriminator for PPT: the operator has already changed
-PPT at runtime through TARCA-001, and TARCA-002 also requires agreement with
-ZenStates-Core's independent configured-PPT query.
+Tarca has the missing discriminator for PPT: the operator changed PPT at
+runtime and observed PM-table `d[0]` track the applied 92 W setting exactly,
+while the ZenStates system-power query remained at 65 W.
 
 Therefore the exact Tarca mapping is:
 
@@ -79,15 +84,18 @@ Therefore the exact Tarca mapping is:
 
 ### PPT
 
-PPT is fail-closed and cross-validated at read time:
+PPT is fail-closed and hardware-qualified at read time:
 
 1. the exact Vermeer/AM4/`0x380905`/`0x5D0` layout must match;
 2. the PM-table value at `d[0]` must be finite, plausible and effectively
-   integral;
-3. ZenStates-Core's configured-system-power query must succeed;
-4. both configured PPT values must be exactly equal.
+   integral.
 
-Only then does Tarca print the PPT result as **SMU + PM-table agreement**.
+PM-table `d[0]` is physically write/readback-qualified at a 92 W runtime PPT
+setting on the recorded 5600X platform. Tarca prints the result as
+**PM-table hardware-qualified readback**.
+
+The ZenStates system-power query is deliberately not part of this acceptance
+path because it returned 65 W while the active PPT and `d[0]` were 92 W.
 
 ### TDC / EDC
 
@@ -95,8 +103,8 @@ TDC and EDC use the exact PM-table structural mapping at `d[2]` and `d[8]`.
 They are intentionally labelled **PM-table structural mapping** until a
 controlled physical write/read-back experiment qualifies each field.
 
-No TDC/EDC write is needed for software CI, and no physical test above the
-operator's 84 W PPT thermal stop is required.
+No TDC/EDC write is needed for software CI. The highest physically exercised
+PPT setting currently recorded is 92 W; no test above that value is required.
 
 ## Live telemetry is separate
 
@@ -114,9 +122,7 @@ Configured limit readback is refused when:
 - CPU family/model/package does not match;
 - PM-table version or structure size does not match;
 - the PM table is unavailable or too short;
-- any mapped limit is non-finite, implausible or materially non-integral;
-- the independent configured-PPT SMU query is unavailable;
-- the configured-PPT SMU query and PM table disagree.
+- any mapped limit is non-finite, implausible or materially non-integral.
 
 This deliberately prefers an unsupported/error result over a plausible but
 wrong configured limit.
