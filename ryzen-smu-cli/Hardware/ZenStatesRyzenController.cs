@@ -112,9 +112,7 @@ internal sealed class ZenStatesRyzenController : IRyzenController
     public bool CanReadPowerLimits =>
         _cpu.RyzenSmu.IsSupported &&
         _cpu.RyzenSmu.DramBaseAddress != 0 &&
-        TryGetPowerLimitLayout(out _) &&
-        (_cpu.smu.Rsmu.SMU_MSG_GetSustainedPowerAndThmLimit > 0 ||
-         _cpu.smu.Mp1Smu.SMU_MSG_GetSustainedPowerAndThmLimit > 0);
+        TryGetPowerLimitLayout(out _);
 
     public string? PowerLimitReadUnavailableReason
     {
@@ -137,13 +135,6 @@ internal sealed class ZenStatesRyzenController : IRyzenController
                        $"package {(uint)_cpu.info.packageType}, PM table " +
                        $"0x{_cpu.RyzenSmu.PmTableVersion:X8} / " +
                        $"0x{PmTableStructureSize:X} bytes.";
-            }
-
-            if (_cpu.smu.Rsmu.SMU_MSG_GetSustainedPowerAndThmLimit == 0 &&
-                _cpu.smu.Mp1Smu.SMU_MSG_GetSustainedPowerAndThmLimit == 0)
-            {
-                return "The CPU does not expose the configured PPT query " +
-                       "required to cross-check PM-table power limits.";
             }
 
             return null;
@@ -704,33 +695,7 @@ internal sealed class ZenStatesRyzenController : IRyzenController
 
         try
         {
-            OperationResult<PowerLimitSnapshot> tableResult =
-                layout!.Read(_cpu.RyzenSmu.GetPmTable());
-            if (!tableResult.Success)
-            {
-                return tableResult;
-            }
-
-            Cpu.SystemPowerLimit? configured =
-                _cpu.GetSystemPowerLimit();
-            if (!configured.HasValue)
-            {
-                return OperationResult<PowerLimitSnapshot>.Fail(
-                    "The SMU configured-PPT query failed; refusing to " +
-                    "trust PM-table limit fields without the cross-check.");
-            }
-
-            PowerLimitSnapshot limits = tableResult.Value!;
-            if (configured.Value.PowerLimit != limits.PptWatts)
-            {
-                return OperationResult<PowerLimitSnapshot>.Fail(
-                    $"Configured PPT disagreement: SMU query returned " +
-                    $"{configured.Value.PowerLimit} W but PM table " +
-                    $"0x{layout.PmTableVersion:X8} returned " +
-                    $"{limits.PptWatts} W.");
-            }
-
-            return OperationResult<PowerLimitSnapshot>.Ok(limits);
+            return layout!.Read(_cpu.RyzenSmu.GetPmTable());
         }
         catch (Exception ex)
         {
