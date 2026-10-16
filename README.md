@@ -77,18 +77,19 @@ do not persist as BIOS configuration.
 
 Tarca's `--set-ppt` path is physically qualified on one Ryzen 5 5600X /
 Vermeer system: Gigabyte B450 AORUS PRO-CF, BIOS F63d, SMU 56.70.0, PM table
-`0x00380905` / `0x5D0`. PPT requests through 84 W were exercised; testing
-above 84 W was intentionally stopped for thermal reasons. HWiNFO package-power
-telemetry was observed at approximately 2 W above the requested setpoint under
-load. That observation is live power telemetry, **not** configured-PPT
-readback and must not be treated as a correction factor.
+`0x00380905` / `0x5D0`. PPT settings through 92 W have been physically
+exercised. HWiNFO package-power telemetry was observed at approximately 2 W
+above the requested setpoint under load; at 92 W the operator reported about
+60 C under the real workload. The package-power observation is live telemetry,
+**not** configured-PPT readback and must not be treated as a correction factor.
 
 TARCA-002 adds exact-identity configured-limit readback for that Vermeer PM
-table. PPT is accepted only when PM-table `d[0]` agrees with ZenStates-Core's
-independent configured-system-power SMU query. TDC `d[2]` and EDC `d[8]`
-are exposed with an explicit structural-mapping label pending controlled
-physical write/read-back evidence. No test above the 84 W PPT thermal stop is
-required. See the
+table. PM-table `d[0]` is hardware-qualified as configured PPT by matching an
+applied 92 W runtime setting exactly. ZenStates-Core's
+`GetSystemPowerLimit()` returned 65 W at the same time, so Tarca deliberately
+does not use that query to accept or reject live PPT readback. TDC `d[2]`
+and EDC `d[8]` remain explicitly structural pending controlled physical
+write/read-back evidence. No test above 92 W is required. See the
 [hardware qualification record](docs/hardware/VERMEER-5600X-B450-AORUS-PRO-PPT.md)
 and
 [TARCA-002 evidence note](docs/research/TARCA-002-VERMEER-POWER-LIMIT-READBACK.md).
@@ -166,9 +167,9 @@ The framework-dependent publish directory is written to
     amps from 1 through 500.
 
 --get-ppt
-    Print the configured PPT limit on the exact qualified Vermeer readback
-    layout. PPT must agree between the PM table and ZenStates-Core's
-    independent configured-system-power SMU query or the command fails closed.
+    Print the configured PPT limit from the exact qualified Vermeer PM-table
+    layout. PM-table d[0] is physically write/readback-qualified at 92 W on
+    the recorded Ryzen 5 5600X platform.
 
 --get-tdc
     Print the configured TDC limit from the exact Vermeer PM-table layout.
