@@ -87,6 +87,18 @@ internal sealed class ZenStatesRyzenController : IRyzenController
         _cpu.smu.Rsmu.SMU_MSG_SetBoostLimitFrequencyAllCores > 0 ||
         _cpu.smu.Mp1Smu.SMU_MSG_SetBoostLimitFrequencyAllCores > 0;
 
+    public bool CanWritePptLimit =>
+        _cpu.smu.Rsmu.SMU_MSG_SetFastLimit > 0 ||
+        _cpu.smu.Mp1Smu.SMU_MSG_SetFastLimit > 0;
+
+    public bool CanWriteTdcLimit =>
+        _cpu.smu.Rsmu.SMU_MSG_SetTDCVDDLimit > 0 ||
+        _cpu.smu.Mp1Smu.SMU_MSG_SetTDCVDDLimit > 0;
+
+    public bool CanWriteEdcLimit =>
+        _cpu.smu.Rsmu.SMU_MSG_SetEDCVDDLimit > 0 ||
+        _cpu.smu.Mp1Smu.SMU_MSG_SetEDCVDDLimit > 0;
+
     private bool TryGetSviTfnVcoreLayout(
         out SviTfnVcoreTelemetry? layout) =>
         SviTfnVcoreTelemetry.TryResolve(
@@ -600,6 +612,33 @@ internal sealed class ZenStatesRyzenController : IRyzenController
             ? OperationResult.Ok()
             : OperationResult.Fail(
                 $"The SMU rejected the {megahertz} MHz maximum boost-frequency limit.");
+    }
+
+    public OperationResult SetPptLimit(uint watts)
+    {
+        SMU.Status status = _cpu.SetPPTLimit(watts);
+        return status == SMU.Status.OK
+            ? OperationResult.Ok()
+            : OperationResult.Fail(
+                $"The SMU rejected PPT limit {watts} W ({status}).");
+    }
+
+    public OperationResult SetTdcLimit(uint amps)
+    {
+        SMU.Status status = _cpu.SetTDCVDDLimit(amps);
+        return status == SMU.Status.OK
+            ? OperationResult.Ok()
+            : OperationResult.Fail(
+                $"The SMU rejected TDC limit {amps} A ({status}).");
+    }
+
+    public OperationResult SetEdcLimit(uint amps)
+    {
+        SMU.Status status = _cpu.SetEDCVDDLimit(amps);
+        return status == SMU.Status.OK
+            ? OperationResult.Ok()
+            : OperationResult.Fail(
+                $"The SMU rejected EDC limit {amps} A ({status}).");
     }
 
     public OperationResult<double> GetVcore()
