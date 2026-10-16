@@ -346,7 +346,7 @@ internal sealed class CommandRunner
             {
                 _output.WriteLine(
                     $"Current PPT limit: {limits.PptWatts} W " +
-                    "(SMU + PM-table agreement).");
+                    "(PM-table hardware-qualified readback).");
             }
 
             if (request.GetTdcLimit)
