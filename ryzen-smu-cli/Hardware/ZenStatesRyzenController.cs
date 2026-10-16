@@ -99,6 +99,57 @@ internal sealed class ZenStatesRyzenController : IRyzenController
         _cpu.smu.Rsmu.SMU_MSG_SetEDCVDDLimit > 0 ||
         _cpu.smu.Mp1Smu.SMU_MSG_SetEDCVDDLimit > 0;
 
+    private bool TryGetPowerLimitLayout(
+        out PowerLimitTelemetryLayout? layout) =>
+        PowerLimitTelemetryLayout.TryResolve(
+            (uint)_cpu.info.family,
+            _cpu.info.model,
+            (uint)_cpu.info.packageType,
+            _cpu.RyzenSmu.PmTableVersion,
+            PmTableStructureSize,
+            out layout);
+
+    public bool CanReadPowerLimits =>
+        _cpu.RyzenSmu.IsSupported &&
+        _cpu.RyzenSmu.DramBaseAddress != 0 &&
+        TryGetPowerLimitLayout(out _) &&
+        (_cpu.smu.Rsmu.SMU_MSG_GetSustainedPowerAndThmLimit > 0 ||
+         _cpu.smu.Mp1Smu.SMU_MSG_GetSustainedPowerAndThmLimit > 0);
+
+    public string? PowerLimitReadUnavailableReason
+    {
+        get
+        {
+            if (!_cpu.RyzenSmu.IsSupported)
+            {
+                return "ZenStates-Core did not initialize PM-table telemetry.";
+            }
+
+            if (_cpu.RyzenSmu.DramBaseAddress == 0)
+            {
+                return "ZenStates-Core did not resolve a PM-table address.";
+            }
+
+            if (!TryGetPowerLimitLayout(out _))
+            {
+                return $"Configured power-limit readback is not mapped for " +
+                       $"CPU 0x{(uint)_cpu.info.family:X2}/0x{_cpu.info.model:X2}, " +
+                       $"package {(uint)_cpu.info.packageType}, PM table " +
+                       $"0x{_cpu.RyzenSmu.PmTableVersion:X8} / " +
+                       $"0x{PmTableStructureSize:X} bytes.";
+            }
+
+            if (_cpu.smu.Rsmu.SMU_MSG_GetSustainedPowerAndThmLimit == 0 &&
+                _cpu.smu.Mp1Smu.SMU_MSG_GetSustainedPowerAndThmLimit == 0)
+            {
+                return "The CPU does not expose the configured PPT query " +
+                       "required to cross-check PM-table power limits.";
+            }
+
+            return null;
+        }
+    }
+
     private bool TryGetSviTfnVcoreLayout(
         out SviTfnVcoreTelemetry? layout) =>
         SviTfnVcoreTelemetry.TryResolve(
@@ -639,6 +690,53 @@ internal sealed class ZenStatesRyzenController : IRyzenController
             ? OperationResult.Ok()
             : OperationResult.Fail(
                 $"The SMU rejected EDC limit {amps} A ({status}).");
+    }
+
+    public OperationResult<PowerLimitSnapshot> GetPowerLimits()
+    {
+        if (!TryGetPowerLimitLayout(
+                out PowerLimitTelemetryLayout? layout))
+        {
+            return OperationResult<PowerLimitSnapshot>.Fail(
+                PowerLimitReadUnavailableReason ??
+                "Configured power-limit readback is unavailable.");
+        }
+
+        try
+        {
+            OperationResult<PowerLimitSnapshot> tableResult =
+                layout!.Read(_cpu.RyzenSmu.GetPmTable());
+            if (!tableResult.Success)
+            {
+                return tableResult;
+            }
+
+            Cpu.SystemPowerLimit? configured =
+                _cpu.GetSystemPowerLimit();
+            if (!configured.HasValue)
+            {
+                return OperationResult<PowerLimitSnapshot>.Fail(
+                    "The SMU configured-PPT query failed; refusing to " +
+                    "trust PM-table limit fields without the cross-check.");
+            }
+
+            PowerLimitSnapshot limits = tableResult.Value!;
+            if (configured.Value.PowerLimit != limits.PptWatts)
+            {
+                return OperationResult<PowerLimitSnapshot>.Fail(
+                    $"Configured PPT disagreement: SMU query returned " +
+                    $"{configured.Value.PowerLimit} W but PM table " +
+                    $"0x{layout.PmTableVersion:X8} returned " +
+                    $"{limits.PptWatts} W.");
+            }
+
+            return OperationResult<PowerLimitSnapshot>.Ok(limits);
+        }
+        catch (Exception ex)
+        {
+            return OperationResult<PowerLimitSnapshot>.Fail(
+                $"Failed to read configured power limits: {ex.Message}");
+        }
     }
 
     public OperationResult<double> GetVcore()
