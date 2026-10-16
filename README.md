@@ -1,16 +1,16 @@
-# ryzen-smu-cli
+# Tarca ryzen-smu-cli
 
-[![CI](https://github.com/Terry577/Arca-ryzen-smu-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Terry577/Arca-ryzen-smu-cli/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/Terry577/Arca-ryzen-smu-cli)](https://github.com/Terry577/Arca-ryzen-smu-cli/releases/latest)
+[![CI](https://github.com/techrote/Tarca-ryzen-smu-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/techrote/Tarca-ryzen-smu-cli/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/github/license/Terry577/Arca-ryzen-smu-cli)](LICENSE)
 
 `ryzen-smu-cli` is a Windows command-line interface for reading and changing
-selected AMD Ryzen System Management Unit (SMU) settings. It uses
-[ZenStates-Core](https://github.com/irusanov/ZenStates-Core) for hardware
-access.
+selected AMD Ryzen System Management Unit (SMU) settings. This Tarca fork adds
+narrow desktop power-limit controls while preserving the signed PawnIO hardware
+path. It uses [ZenStates-Core](https://github.com/irusanov/ZenStates-Core) for
+hardware access.
 
 > [!WARNING]
-> SMU, FMax, and Curve Optimizer changes can make a system unstable, corrupt
+> SMU power-limit, FMax, and Curve Optimizer changes can make a system unstable, corrupt
 > work in progress, or prevent Windows from booting normally. Overclocking may
 > also affect warranty coverage. Make small changes, validate them under load,
 > and keep a known-good BIOS profile. Core-disable changes take effect only
@@ -18,8 +18,9 @@ access.
 
 ## Download
 
-Download the latest version from
-[GitHub Releases](https://github.com/Terry577/Arca-ryzen-smu-cli/releases/latest).
+Tarca is currently developed from source. The inherited upstream release
+packages remain documented below, but Tarca-specific binaries should not be
+treated as available until this fork publishes its own release.
 
 | Package | Runtime requirement | Intended use |
 | --- | --- | --- |
@@ -71,15 +72,19 @@ Open an Administrator PowerShell in the extracted release directory:
 ```
 
 Start with reads. Review the enabled-core mapping before setting offsets or
-changing core-disable masks.
+changing core-disable masks. Power-limit writes are runtime SMU operations and
+do not persist as BIOS configuration. Tarca's initial power-limit target is
+Vermeer / Ryzen 5000 desktop, including the Ryzen 5 5600X; this software path
+still requires physical hardware qualification before it is described as
+verified on a specific CPU/motherboard combination.
 
 ## Build from source
 
 Clone recursively because ZenStates-Core is a Git submodule:
 
 ```powershell
-git clone --recurse-submodules https://github.com/Terry577/Arca-ryzen-smu-cli.git
-cd Arca-ryzen-smu-cli
+git clone --recurse-submodules https://github.com/techrote/Tarca-ryzen-smu-cli.git
+cd Tarca-ryzen-smu-cli
 .\scripts\Test.ps1
 ```
 
@@ -130,6 +135,20 @@ The framework-dependent publish directory is written to
 
 --get-pbo-scalar
     Print the current PBO scalar.
+
+--set-ppt <watts>
+    Set only the package power tracking (PPT) limit. Accepted CLI values are
+    whole watts from 1 through 500. ZenStates-Core performs the hardware-unit
+    conversion. No TDC, EDC, Curve Optimizer, scalar, voltage, or FMax setting
+    is changed unless separately requested.
+
+--set-tdc <amps>
+    Set only the sustained VDD current (TDC) limit. Accepted CLI values are
+    whole amps from 1 through 500.
+
+--set-edc <amps>
+    Set only the peak VDD current (EDC) limit. Accepted CLI values are whole
+    amps from 1 through 500.
 
 --set-fmax <MHz>
     Set the maximum boost-frequency limit for all cores. The value must be a
