@@ -18,6 +18,7 @@ public sealed class CriticalSafetyTests
             ["--set-tdc", "-1"],
             ["--set-edc", "90.5"],
             ["--stream-vcore", "--set-ppt", "90"],
+            ["--stream-vcore", "--get-ppt"],
             ["--offset", "0:-10,-20"],
             ["--disable-cores", "1,1"],
             ["--stream-vcore", "--interval-ms", "49"],
@@ -221,6 +222,9 @@ public sealed class CriticalSafetyTests
                 "--set-ppt", "90",
                 "--set-tdc", "70",
                 "--set-edc", "100",
+                "--get-ppt",
+                "--get-tdc",
+                "--get-edc",
                 "--set-fmax", "5225",
                 "--get-fmax",
             ],
@@ -234,10 +238,20 @@ public sealed class CriticalSafetyTests
         Assert.Equal([70u], controller.TdcWrites);
         Assert.Equal([100u], controller.EdcWrites);
         Assert.Equal([5225u], controller.FMaxWrites);
+        Assert.Equal(1, controller.PowerLimitReadCount);
         Assert.Equal(1, controller.FMaxReadCount);
         Assert.Contains("Set PPT limit to 90 W.", output.ToString());
         Assert.Contains("Set TDC limit to 70 A.", output.ToString());
         Assert.Contains("Set EDC limit to 100 A.", output.ToString());
+        Assert.Contains(
+            "Current PPT limit: 90 W (SMU + PM-table agreement).",
+            output.ToString());
+        Assert.Contains(
+            "Current TDC limit: 70 A (PM-table structural mapping).",
+            output.ToString());
+        Assert.Contains(
+            "Current EDC limit: 100 A (PM-table structural mapping).",
+            output.ToString());
         Assert.Contains("Set FMax to 5225 MHz.", output.ToString());
         Assert.Contains("Current FMax: 5250 MHz.", output.ToString());
 
@@ -816,6 +830,58 @@ public sealed class CriticalSafetyTests
 
         Assert.True(result.Success, result.Error);
         Assert.Equal(1.28, result.Value, precision: 6);
+
+        Assert.True(PowerLimitTelemetryLayout.TryResolve(
+            0x19,
+            0x21,
+            2,
+            0x00380905,
+            0x000005D0,
+            out PowerLimitTelemetryLayout? powerLimits));
+        Assert.NotNull(powerLimits);
+        Assert.Equal(0, powerLimits!.PptLimitIndex);
+        Assert.Equal(2, powerLimits.TdcLimitIndex);
+        Assert.Equal(8, powerLimits.EdcLimitIndex);
+
+        Assert.False(PowerLimitTelemetryLayout.TryResolve(
+            0x19,
+            0x21,
+            2,
+            0x00380905,
+            0x000005A4,
+            out _));
+        Assert.False(PowerLimitTelemetryLayout.TryResolve(
+            0x19,
+            0x21,
+            0,
+            0x00380905,
+            0x000005D0,
+            out _));
+        Assert.False(PowerLimitTelemetryLayout.TryResolve(
+            0x19,
+            0x21,
+            2,
+            0x00380904,
+            0x000005A4,
+            out _));
+
+        float[] vermeerTable = new float[372];
+        vermeerTable[0] = 84.0f;
+        vermeerTable[2] = 60.0f;
+        vermeerTable[8] = 90.0f;
+        OperationResult<PowerLimitSnapshot> limitResult =
+            powerLimits.Read(vermeerTable);
+
+        Assert.True(limitResult.Success, limitResult.Error);
+        Assert.Equal(84u, limitResult.Value!.PptWatts);
+        Assert.Equal(60u, limitResult.Value.TdcAmps);
+        Assert.Equal(90u, limitResult.Value.EdcAmps);
+
+        vermeerTable[2] = 60.5f;
+        OperationResult<PowerLimitSnapshot> nonIntegralLimit =
+            powerLimits.Read(vermeerTable);
+        Assert.False(nonIntegralLimit.Success);
+        Assert.Contains("non-integral", nonIntegralLimit.Error);
     }
 
     [Fact]
