@@ -1,7 +1,7 @@
 # Tarca ryzen-smu-cli
 
 [![CI](https://github.com/techrote/Tarca-ryzen-smu-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/techrote/Tarca-ryzen-smu-cli/actions/workflows/ci.yml)
-[![License: GPL-3.0](https://img.shields.io/github/license/Terry577/Arca-ryzen-smu-cli)](LICENSE)
+[![License: GPL-3.0](https://img.shields.io/github/license/techrote/Tarca-ryzen-smu-cli)](LICENSE)
 
 `ryzen-smu-cli` is a Windows command-line interface for reading and changing
 selected AMD Ryzen System Management Unit (SMU) settings. This Tarca fork adds
@@ -10,8 +10,8 @@ path. It uses [ZenStates-Core](https://github.com/irusanov/ZenStates-Core) for
 hardware access.
 
 > [!WARNING]
-> SMU power-limit, FMax, and Curve Optimizer changes can make a system unstable, corrupt
-> work in progress, or prevent Windows from booting normally. Overclocking may
+> SMU power-limit, FMax, and Curve Optimizer changes can make a system
+> unstable, corrupt work in progress, or prevent Windows from booting normally. Overclocking may
 > also affect warranty coverage. Make small changes, validate them under load,
 > and keep a known-good BIOS profile. Core-disable changes take effect only
 > after a reboot.
