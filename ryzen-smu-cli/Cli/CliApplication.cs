@@ -5,9 +5,6 @@ namespace ryzen_smu_cli;
 
 internal static class CliApplication
 {
-    private const uint MinimumPowerLimit = 1;
-    private const uint MaximumPowerLimit = 500;
-
     public static int Run(
         string[] args,
         Func<IRyzenController> controllerFactory,
@@ -144,7 +141,7 @@ internal static class CliApplication
         {
             Description =
                 $"Set the package power tracking limit in whole watts " +
-                $"({MinimumPowerLimit}-{MaximumPowerLimit} W).",
+                $"({CliRequest.MinimumPowerLimitValue}-{CliRequest.MaximumPowerLimitValue} W).",
         };
         setPptOption.Validators.Add(result =>
         {
@@ -164,7 +161,7 @@ internal static class CliApplication
         {
             Description =
                 $"Set the sustained VDD current limit in whole amps " +
-                $"({MinimumPowerLimit}-{MaximumPowerLimit} A).",
+                $"({CliRequest.MinimumPowerLimitValue}-{CliRequest.MaximumPowerLimitValue} A).",
         };
         setTdcOption.Validators.Add(result =>
         {
@@ -184,7 +181,7 @@ internal static class CliApplication
         {
             Description =
                 $"Set the peak VDD current limit in whole amps " +
-                $"({MinimumPowerLimit}-{MaximumPowerLimit} A).",
+                $"({CliRequest.MinimumPowerLimitValue}-{CliRequest.MaximumPowerLimitValue} A).",
         };
         setEdcOption.Validators.Add(result =>
         {
@@ -750,7 +747,7 @@ internal static class CliApplication
                 NumberStyles.None,
                 CultureInfo.InvariantCulture,
                 out value) &&
-            value is >= MinimumPowerLimit and <= MaximumPowerLimit)
+            value is >= CliRequest.MinimumPowerLimitValue and <= CliRequest.MaximumPowerLimitValue)
         {
             error = null;
             return true;
@@ -759,7 +756,7 @@ internal static class CliApplication
         value = 0;
         error =
             $"{limitName} must be a whole number from " +
-            $"{MinimumPowerLimit} through {MaximumPowerLimit} {unitName}.";
+            $"{CliRequest.MinimumPowerLimitValue} through {CliRequest.MaximumPowerLimitValue} {unitName}.";
         return false;
     }
 }
