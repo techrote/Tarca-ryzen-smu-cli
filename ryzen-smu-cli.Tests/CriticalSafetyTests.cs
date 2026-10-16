@@ -13,6 +13,11 @@ public sealed class CriticalSafetyTests
         [
             ["--set-pbo-scalar", "0"],
             ["--set-fmax", "5226"],
+            ["--set-ppt", "0"],
+            ["--set-ppt", "501"],
+            ["--set-tdc", "-1"],
+            ["--set-edc", "90.5"],
+            ["--stream-vcore", "--set-ppt", "90"],
             ["--offset", "0:-10,-20"],
             ["--disable-cores", "1,1"],
             ["--stream-vcore", "--interval-ms", "49"],
@@ -175,7 +180,7 @@ public sealed class CriticalSafetyTests
     }
 
     [Fact]
-    public void FMaxValidationAndControllerWireRemainStable()
+    public void FMaxAndPowerLimitValidationAndControllerWireRemainStable()
     {
         foreach ((string text, uint expected) in new[]
                  {
@@ -201,17 +206,45 @@ public sealed class CriticalSafetyTests
             Enumerable.Range(0, 8));
         StringWriter output = new();
         int exitCode = CliApplication.Run(
-            ["--set-fmax", "5225", "--get-fmax"],
+            [
+                "--set-ppt", "90",
+                "--set-tdc", "70",
+                "--set-edc", "100",
+                "--set-fmax", "5225",
+                "--get-fmax",
+            ],
             () => controller,
             FakePrivilegeChecker.Administrator(),
             output,
             new StringWriter());
 
         Assert.Equal((int)ExitCode.Success, exitCode);
+        Assert.Equal([90u], controller.PptWrites);
+        Assert.Equal([70u], controller.TdcWrites);
+        Assert.Equal([100u], controller.EdcWrites);
         Assert.Equal([5225u], controller.FMaxWrites);
         Assert.Equal(1, controller.FMaxReadCount);
+        Assert.Contains("Set PPT limit to 90 W.", output.ToString());
+        Assert.Contains("Set TDC limit to 70 A.", output.ToString());
+        Assert.Contains("Set EDC limit to 100 A.", output.ToString());
         Assert.Contains("Set FMax to 5225 MHz.", output.ToString());
         Assert.Contains("Current FMax: 5250 MHz.", output.ToString());
+
+        FakeRyzenController pptOnlyController = new(
+            8,
+            Enumerable.Range(0, 8));
+        int pptOnlyExitCode = CliApplication.Run(
+            ["--set-ppt", "95"],
+            () => pptOnlyController,
+            FakePrivilegeChecker.Administrator(),
+            new StringWriter(),
+            new StringWriter());
+
+        Assert.Equal((int)ExitCode.Success, pptOnlyExitCode);
+        Assert.Equal([95u], pptOnlyController.PptWrites);
+        Assert.Empty(pptOnlyController.TdcWrites);
+        Assert.Empty(pptOnlyController.EdcWrites);
+        Assert.Empty(pptOnlyController.FMaxWrites);
     }
 
     [Fact]
