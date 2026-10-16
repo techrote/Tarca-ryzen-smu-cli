@@ -17,6 +17,12 @@ internal sealed record CliRequest(
 {
     public bool StreamVcore => VcoreStreamIntervalMilliseconds.HasValue;
 
+    public uint? PptWatts { get; init; }
+
+    public uint? TdcAmps { get; init; }
+
+    public uint? EdcAmps { get; init; }
+
     public bool DiagnoseVcore { get; init; }
 
     public bool GetCpuTemperature { get; init; }
@@ -48,6 +54,9 @@ internal sealed record CliRequest(
         GetEnabledCores ||
         PboScalar is not null ||
         GetPboScalar ||
+        PptWatts is not null ||
+        TdcAmps is not null ||
+        EdcAmps is not null ||
         FMax is not null ||
         GetFMax ||
         GetVcore ||
