@@ -40,6 +40,10 @@ internal interface IRyzenController : IDisposable
 
     bool CanWriteEdcLimit { get; }
 
+    bool CanReadPowerLimits { get; }
+
+    string? PowerLimitReadUnavailableReason { get; }
+
     bool CanReadVcore { get; }
 
     string? VcoreReadUnavailableReason { get; }
@@ -65,6 +69,8 @@ internal interface IRyzenController : IDisposable
     OperationResult SetTdcLimit(uint amps);
 
     OperationResult SetEdcLimit(uint amps);
+
+    OperationResult<PowerLimitSnapshot> GetPowerLimits();
 
     OperationResult<double> GetVcore();
 

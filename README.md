@@ -80,10 +80,18 @@ Vermeer system: Gigabyte B450 AORUS PRO-CF, BIOS F63d, SMU 56.70.0, PM table
 `0x00380905` / `0x5D0`. PPT requests through 84 W were exercised; testing
 above 84 W was intentionally stopped for thermal reasons. HWiNFO package-power
 telemetry was observed at approximately 2 W above the requested setpoint under
-load. That observation is live power telemetry, **not** direct configured-PPT
-readback and must not be treated as a correction factor. TDC and EDC writes
-remain physically unqualified. See
-[the hardware qualification record](docs/hardware/VERMEER-5600X-B450-AORUS-PRO-PPT.md).
+load. That observation is live power telemetry, **not** configured-PPT
+readback and must not be treated as a correction factor.
+
+TARCA-002 adds exact-identity configured-limit readback for that Vermeer PM
+table. PPT is accepted only when PM-table `d[0]` agrees with ZenStates-Core's
+independent configured-system-power SMU query. TDC `d[2]` and EDC `d[8]`
+are exposed with an explicit structural-mapping label pending controlled
+physical write/read-back evidence. No test above the 84 W PPT thermal stop is
+required. See the
+[hardware qualification record](docs/hardware/VERMEER-5600X-B450-AORUS-PRO-PPT.md)
+and
+[TARCA-002 evidence note](docs/research/TARCA-002-VERMEER-POWER-LIMIT-READBACK.md).
 
 ## Build from source
 
@@ -156,6 +164,21 @@ The framework-dependent publish directory is written to
 --set-edc <amps>
     Set only the peak VDD current (EDC) limit. Accepted CLI values are whole
     amps from 1 through 500.
+
+--get-ppt
+    Print the configured PPT limit on the exact qualified Vermeer readback
+    layout. PPT must agree between the PM table and ZenStates-Core's
+    independent configured-system-power SMU query or the command fails closed.
+
+--get-tdc
+    Print the configured TDC limit from the exact Vermeer PM-table layout.
+    This field is reported as a structural mapping until physical write/read-
+    back evidence qualifies it.
+
+--get-edc
+    Print the configured EDC limit from the exact Vermeer PM-table layout.
+    This field is reported as a structural mapping until physical write/read-
+    back evidence qualifies it.
 
 --set-fmax <MHz>
     Set the maximum boost-frequency limit for all cores. The value must be a
@@ -532,6 +555,7 @@ native-component details.
 Additional documentation:
 
 - [Vermeer Ryzen 5 5600X PPT hardware qualification](docs/hardware/VERMEER-5600X-B450-AORUS-PRO-PPT.md)
+- [TARCA-002 Vermeer configured-limit readback evidence](docs/research/TARCA-002-VERMEER-POWER-LIMIT-READBACK.md)
 - [Changelog](CHANGELOG.md)
 - [Installation](docs/INSTALLATION.md)
 - [Architecture](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/ARCHITECTURE.md)

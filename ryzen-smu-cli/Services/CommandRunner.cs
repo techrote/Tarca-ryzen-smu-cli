@@ -328,6 +328,42 @@ internal sealed class CommandRunner
             _output.WriteLine($"Set EDC limit to {edcAmps} A.");
         }
 
+        if (request.GetPptLimit ||
+            request.GetTdcLimit ||
+            request.GetEdcLimit)
+        {
+            OperationResult<PowerLimitSnapshot> result =
+                controller.GetPowerLimits();
+            if (!result.Success)
+            {
+                _error.WriteLine(result.Error);
+                return (int)ExitCode.OperationFailed;
+            }
+
+            PowerLimitSnapshot limits = result.Value!;
+
+            if (request.GetPptLimit)
+            {
+                _output.WriteLine(
+                    $"Current PPT limit: {limits.PptWatts} W " +
+                    "(SMU + PM-table agreement).");
+            }
+
+            if (request.GetTdcLimit)
+            {
+                _output.WriteLine(
+                    $"Current TDC limit: {limits.TdcAmps} A " +
+                    "(PM-table structural mapping).");
+            }
+
+            if (request.GetEdcLimit)
+            {
+                _output.WriteLine(
+                    $"Current EDC limit: {limits.EdcAmps} A " +
+                    "(PM-table structural mapping).");
+            }
+        }
+
         if (request.FMax is FMaxFrequency fMax)
         {
             OperationResult result = controller.SetFMax(fMax.Megahertz);
@@ -1161,6 +1197,17 @@ internal sealed class CommandRunner
             return (int)ExitCode.UnsupportedOperation;
         }
 
+        if ((request.GetPptLimit ||
+             request.GetTdcLimit ||
+             request.GetEdcLimit) &&
+            !controller.CanReadPowerLimits)
+        {
+            _error.WriteLine(
+                controller.PowerLimitReadUnavailableReason ??
+                "This CPU does not expose a qualified configured power-limit readback path.");
+            return (int)ExitCode.UnsupportedOperation;
+        }
+
         if (request.FMax is not null && !controller.CanWriteFMax)
         {
             _error.WriteLine(
@@ -1214,6 +1261,9 @@ internal sealed class CommandRunner
                request.PptWatts is not null ||
                request.TdcAmps is not null ||
                request.EdcAmps is not null ||
+               request.GetPptLimit ||
+               request.GetTdcLimit ||
+               request.GetEdcLimit ||
                request.FMax is not null ||
                request.GetFMax ||
                request.GetCpuTemperature ||
@@ -1236,6 +1286,9 @@ internal sealed class CommandRunner
                request.PptWatts is not null ||
                request.TdcAmps is not null ||
                request.EdcAmps is not null ||
+               request.GetPptLimit ||
+               request.GetTdcLimit ||
+               request.GetEdcLimit ||
                request.FMax is not null ||
                request.GetFMax ||
                request.GetVcore ||
@@ -1259,6 +1312,9 @@ internal sealed class CommandRunner
                request.PptWatts is not null ||
                request.TdcAmps is not null ||
                request.EdcAmps is not null ||
+               request.GetPptLimit ||
+               request.GetTdcLimit ||
+               request.GetEdcLimit ||
                request.FMax is not null ||
                request.GetFMax ||
                request.GetVcore ||

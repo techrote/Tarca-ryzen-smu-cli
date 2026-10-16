@@ -100,6 +100,10 @@ internal sealed class FakeRyzenController : IRyzenController
 
     public bool CanWriteEdcLimit => true;
 
+    public bool CanReadPowerLimits { get; init; } = true;
+
+    public string? PowerLimitReadUnavailableReason { get; init; }
+
     public bool CanReadVcore => true;
 
     public string? VcoreReadUnavailableReason => null;
@@ -128,6 +132,12 @@ internal sealed class FakeRyzenController : IRyzenController
     public List<uint> TdcWrites { get; } = [];
 
     public List<uint> EdcWrites { get; } = [];
+
+    public OperationResult<PowerLimitSnapshot> GetPowerLimitsResult { get; init; } =
+        OperationResult<PowerLimitSnapshot>.Ok(
+            new PowerLimitSnapshot(90, 70, 100));
+
+    public int PowerLimitReadCount { get; private set; }
 
     public OperationResult<double> GetVcoreResult { get; init; } =
         OperationResult<double>.Ok(1.225);
@@ -198,6 +208,12 @@ internal sealed class FakeRyzenController : IRyzenController
     {
         EdcWrites.Add(amps);
         return OperationResult.Ok();
+    }
+
+    public OperationResult<PowerLimitSnapshot> GetPowerLimits()
+    {
+        PowerLimitReadCount++;
+        return GetPowerLimitsResult;
     }
 
     public OperationResult<double> GetVcore()

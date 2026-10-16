@@ -9,6 +9,10 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `--get-ppt`, `--get-tdc`, and `--get-edc` configured-limit readback
+  for the exact Vermeer `19h/21h`, AM4, PM-table `0x00380905` /
+  `0x5D0` identity. PPT additionally requires exact agreement with
+  ZenStates-Core's independent configured-system-power SMU query.
 - Independent `--set-ppt <watts>`, `--set-tdc <amps>`, and
   `--set-edc <amps>` runtime SMU controls with whole-number 1-500 W/A input
   validation before hardware initialization.
@@ -27,8 +31,19 @@ and this project follows [Semantic Versioning](https://semver.org/).
   not as direct configured-PPT readback or a correction factor.
 - TDC/EDC physical qualification and configured-limit readback remain open.
 
+### Changed
+
+- Configured PPT readback is labelled as SMU + PM-table agreement. TDC and EDC
+  are explicitly labelled as PM-table structural mappings pending controlled
+  physical write/read-back qualification.
+- Power-limit readback fails closed on CPU/package/table identity mismatch,
+  short or implausible PM data, non-integral mapped limits, unavailable PPT
+  query, or PPT disagreement between the SMU query and PM table.
+
 ### Safety
 
+- The approximately +2 W HWiNFO package-power observation is not used as a
+  configured-limit correction or estimator.
 - Each power-limit option writes only its requested limit; unrelated Curve
   Optimizer, PBO scalar, FMax, voltage, and other settings are unchanged unless
   separately requested.

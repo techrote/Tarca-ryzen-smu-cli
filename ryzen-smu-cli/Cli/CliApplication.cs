@@ -197,6 +197,21 @@ internal static class CliApplication
                 result.AddError(validationError!);
             }
         });
+        Option<bool> getPptOption = new("--get-ppt")
+        {
+            Description =
+                "Print the configured PPT limit when an exact qualified readback path is available.",
+        };
+        Option<bool> getTdcOption = new("--get-tdc")
+        {
+            Description =
+                "Print the configured TDC limit when an exact qualified readback path is available.",
+        };
+        Option<bool> getEdcOption = new("--get-edc")
+        {
+            Description =
+                "Print the configured EDC limit when an exact qualified readback path is available.",
+        };
         Option<string?> setFMaxOption = new("--set-fmax")
         {
             Description =
@@ -336,6 +351,9 @@ internal static class CliApplication
                 setPptOption,
                 setTdcOption,
                 setEdcOption,
+                getPptOption,
+                getTdcOption,
+                getEdcOption,
                 setFMaxOption,
                 getFMaxOption,
                 getVcoreOption,
@@ -375,10 +393,13 @@ internal static class CliApplication
             bool streamSystemTelemetry =
                 WasSpecified(streamSystemTelemetryOption);
             bool diagnoseVcore = WasSpecified(diagnoseVcoreOption);
-            bool setPowerLimit =
+            bool powerLimitOperation =
                 WasSpecified(setPptOption) ||
                 WasSpecified(setTdcOption) ||
-                WasSpecified(setEdcOption);
+                WasSpecified(setEdcOption) ||
+                WasSpecified(getPptOption) ||
+                WasSpecified(getTdcOption) ||
+                WasSpecified(getEdcOption);
             var intervalResult = result.GetResult(intervalMillisecondsOption);
             if (intervalResult is { Implicit: false } &&
                 intervalResult.Tokens.Count == 1)
@@ -484,7 +505,7 @@ internal static class CliApplication
                  WasSpecified(getEnabledCoresOption) ||
                  WasSpecified(setPboScalarOption) ||
                  WasSpecified(getPboScalarOption) ||
-                 setPowerLimit ||
+                 powerLimitOperation ||
                  WasSpecified(setFMaxOption) ||
                  WasSpecified(getFMaxOption) ||
                  WasSpecified(getCpuTemperatureOption) ||
@@ -504,7 +525,7 @@ internal static class CliApplication
                  WasSpecified(getEnabledCoresOption) ||
                  WasSpecified(setPboScalarOption) ||
                  WasSpecified(getPboScalarOption) ||
-                 setPowerLimit ||
+                 powerLimitOperation ||
                  WasSpecified(setFMaxOption) ||
                  WasSpecified(getFMaxOption) ||
                  WasSpecified(getVcoreOption) ||
@@ -526,7 +547,7 @@ internal static class CliApplication
                  WasSpecified(getEnabledCoresOption) ||
                  WasSpecified(setPboScalarOption) ||
                  WasSpecified(getPboScalarOption) ||
-                 setPowerLimit ||
+                 powerLimitOperation ||
                  WasSpecified(setFMaxOption) ||
                  WasSpecified(getFMaxOption) ||
                  WasSpecified(getVcoreOption) ||
@@ -548,7 +569,7 @@ internal static class CliApplication
                  WasSpecified(getEnabledCoresOption) ||
                  WasSpecified(setPboScalarOption) ||
                  WasSpecified(getPboScalarOption) ||
-                 setPowerLimit ||
+                 powerLimitOperation ||
                  WasSpecified(setFMaxOption) ||
                  WasSpecified(getFMaxOption) ||
                  WasSpecified(getVcoreOption) ||
@@ -693,6 +714,9 @@ internal static class CliApplication
                 PptWatts = pptWatts,
                 TdcAmps = tdcAmps,
                 EdcAmps = edcAmps,
+                GetPptLimit = parseResult.GetValue(getPptOption),
+                GetTdcLimit = parseResult.GetValue(getTdcOption),
+                GetEdcLimit = parseResult.GetValue(getEdcOption),
                 DiagnoseVcore = parseResult.GetValue(diagnoseVcoreOption),
                 GetCpuTemperature =
                     parseResult.GetValue(getCpuTemperatureOption),
