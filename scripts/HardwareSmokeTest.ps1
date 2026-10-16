@@ -5,7 +5,9 @@ param(
 
     [string]$LogPath,
 
-    [switch]$IncludePhysicalTopology
+    [switch]$IncludePhysicalTopology,
+
+    [switch]$IncludePowerLimits
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,6 +37,10 @@ try {
 
     if ($IncludePhysicalTopology) {
         $readOnlyCommands += ,@("--get-physical-cores")
+    }
+
+    if ($IncludePowerLimits) {
+        $readOnlyCommands += ,@("--get-ppt", "--get-tdc", "--get-edc")
     }
 
     foreach ($arguments in $readOnlyCommands) {
