@@ -11,8 +11,8 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 - `--get-ppt`, `--get-tdc`, and `--get-edc` configured-limit readback
   for the exact Vermeer `19h/21h`, AM4, PM-table `0x00380905` /
-  `0x5D0` identity. PPT additionally requires exact agreement with
-  ZenStates-Core's independent configured-system-power SMU query.
+  `0x5D0` identity. PPT PM-table `d[0]` is hardware-qualified by a
+  matching 92 W runtime write/readback observation.
 - Independent `--set-ppt <watts>`, `--set-tdc <amps>`, and
   `--set-edc <amps>` runtime SMU controls with whole-number 1-500 W/A input
   validation before hardware initialization.
@@ -24,21 +24,25 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 - Physically qualified `--set-ppt` on an AMD Ryzen 5 5600X / Vermeer with a
   Gigabyte B450 AORUS PRO-CF, BIOS F63d, SMU 56.70.0, and PM table
-  `0x00380905` / `0x5D0`. Requests through 84 W were exercised; testing
-  above 84 W was stopped for thermal reasons.
+  `0x00380905` / `0x5D0`. Settings through 92 W were exercised; at
+  92 W the operator reported about 60 C under the real workload.
 - HWiNFO package-power telemetry was observed at approximately 2 W above the
   requested PPT setpoint under load. This is recorded as telemetry behavior,
   not as direct configured-PPT readback or a correction factor.
-- TDC/EDC physical qualification and configured-limit readback remain open.
+- PM-table `d[0]` configured-PPT readback is physically qualified at
+  92 W. TDC/EDC readback remains structural pending physical qualification.
 
 ### Changed
 
-- Configured PPT readback is labelled as SMU + PM-table agreement. TDC and EDC
-  are explicitly labelled as PM-table structural mappings pending controlled
-  physical write/read-back qualification.
+- Configured PPT readback is labelled as PM-table hardware-qualified
+  readback. TDC and EDC remain explicitly labelled as PM-table structural
+  mappings pending controlled physical write/read-back qualification.
+- ZenStates-Core `GetSystemPowerLimit()` returned 65 W while the active PPT
+  and PM-table `d[0]` were 92 W on the qualified Vermeer system. The query
+  is retained as negative evidence and is no longer used to gate live PPT
+  readback.
 - Power-limit readback fails closed on CPU/package/table identity mismatch,
-  short or implausible PM data, non-integral mapped limits, unavailable PPT
-  query, or PPT disagreement between the SMU query and PM table.
+  short or implausible PM data, or non-integral mapped limits.
 
 ### Safety
 
