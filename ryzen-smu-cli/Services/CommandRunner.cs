@@ -292,6 +292,42 @@ internal sealed class CommandRunner
                 result.Value.ToString(CultureInfo.InvariantCulture));
         }
 
+        if (request.PptWatts is uint pptWatts)
+        {
+            OperationResult result = controller.SetPptLimit(pptWatts);
+            if (!result.Success)
+            {
+                _error.WriteLine(result.Error);
+                return (int)ExitCode.OperationFailed;
+            }
+
+            _output.WriteLine($"Set PPT limit to {pptWatts} W.");
+        }
+
+        if (request.TdcAmps is uint tdcAmps)
+        {
+            OperationResult result = controller.SetTdcLimit(tdcAmps);
+            if (!result.Success)
+            {
+                _error.WriteLine(result.Error);
+                return (int)ExitCode.OperationFailed;
+            }
+
+            _output.WriteLine($"Set TDC limit to {tdcAmps} A.");
+        }
+
+        if (request.EdcAmps is uint edcAmps)
+        {
+            OperationResult result = controller.SetEdcLimit(edcAmps);
+            if (!result.Success)
+            {
+                _error.WriteLine(result.Error);
+                return (int)ExitCode.OperationFailed;
+            }
+
+            _output.WriteLine($"Set EDC limit to {edcAmps} A.");
+        }
+
         if (request.FMax is FMaxFrequency fMax)
         {
             OperationResult result = controller.SetFMax(fMax.Megahertz);
@@ -1085,6 +1121,27 @@ internal sealed class CommandRunner
             return (int)ExitCode.InitializationFailed;
         }
 
+        if (request.PptWatts is not null && !controller.CanWritePptLimit)
+        {
+            _error.WriteLine(
+                "This CPU does not expose the SMU command required to set PPT.");
+            return (int)ExitCode.UnsupportedOperation;
+        }
+
+        if (request.TdcAmps is not null && !controller.CanWriteTdcLimit)
+        {
+            _error.WriteLine(
+                "This CPU does not expose the SMU command required to set TDC.");
+            return (int)ExitCode.UnsupportedOperation;
+        }
+
+        if (request.EdcAmps is not null && !controller.CanWriteEdcLimit)
+        {
+            _error.WriteLine(
+                "This CPU does not expose the SMU command required to set EDC.");
+            return (int)ExitCode.UnsupportedOperation;
+        }
+
         if (request.FMax is not null && !controller.CanWriteFMax)
         {
             _error.WriteLine(
@@ -1135,6 +1192,9 @@ internal sealed class CommandRunner
                request.GetEnabledCores ||
                request.PboScalar is not null ||
                request.GetPboScalar ||
+               request.PptWatts is not null ||
+               request.TdcAmps is not null ||
+               request.EdcAmps is not null ||
                request.FMax is not null ||
                request.GetFMax ||
                request.GetCpuTemperature ||
@@ -1154,6 +1214,9 @@ internal sealed class CommandRunner
                request.GetEnabledCores ||
                request.PboScalar is not null ||
                request.GetPboScalar ||
+               request.PptWatts is not null ||
+               request.TdcAmps is not null ||
+               request.EdcAmps is not null ||
                request.FMax is not null ||
                request.GetFMax ||
                request.GetVcore ||
@@ -1174,6 +1237,9 @@ internal sealed class CommandRunner
                request.GetEnabledCores ||
                request.PboScalar is not null ||
                request.GetPboScalar ||
+               request.PptWatts is not null ||
+               request.TdcAmps is not null ||
+               request.EdcAmps is not null ||
                request.FMax is not null ||
                request.GetFMax ||
                request.GetVcore ||
