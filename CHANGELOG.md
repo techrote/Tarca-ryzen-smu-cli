@@ -16,13 +16,25 @@ and this project follows [Semantic Versioning](https://semver.org/).
   ZenStates-Core and signed PawnIO access path, without raw mailbox commands in
   the CLI.
 
+### Hardware qualification
+
+- Physically qualified `--set-ppt` on an AMD Ryzen 5 5600X / Vermeer with a
+  Gigabyte B450 AORUS PRO-CF, BIOS F63d, SMU 56.70.0, and PM table
+  `0x00380905` / `0x5D0`. Requests through 84 W were exercised; testing
+  above 84 W was stopped for thermal reasons.
+- HWiNFO package-power telemetry was observed at approximately 2 W above the
+  requested PPT setpoint under load. This is recorded as telemetry behavior,
+  not as direct configured-PPT readback or a correction factor.
+- TDC/EDC physical qualification and configured-limit readback remain open.
+
 ### Safety
 
 - Each power-limit option writes only its requested limit; unrelated Curve
   Optimizer, PBO scalar, FMax, voltage, and other settings are unchanged unless
   separately requested.
 - Automated tests remain within the fixed 13-Fact allowlist and never perform
-  real SMU hardware writes. Physical 5600X qualification remains outstanding.
+  real SMU hardware writes. The qualified 5600X result is operator hardware
+  evidence and is kept separate from automated CI.
 
 ## [0.5.0] - 2026-08-12
 
