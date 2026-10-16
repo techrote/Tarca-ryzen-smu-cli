@@ -244,7 +244,7 @@ public sealed class CriticalSafetyTests
         Assert.Contains("Set TDC limit to 70 A.", output.ToString());
         Assert.Contains("Set EDC limit to 100 A.", output.ToString());
         Assert.Contains(
-            "Current PPT limit: 90 W (SMU + PM-table agreement).",
+            "Current PPT limit: 90 W (PM-table hardware-qualified readback).",
             output.ToString());
         Assert.Contains(
             "Current TDC limit: 70 A (PM-table structural mapping).",
@@ -866,14 +866,14 @@ public sealed class CriticalSafetyTests
             out _));
 
         float[] vermeerTable = new float[372];
-        vermeerTable[0] = 84.0f;
+        vermeerTable[0] = 92.0f;
         vermeerTable[2] = 60.0f;
         vermeerTable[8] = 90.0f;
         OperationResult<PowerLimitSnapshot> limitResult =
             powerLimits.Read(vermeerTable);
 
         Assert.True(limitResult.Success, limitResult.Error);
-        Assert.Equal(84u, limitResult.Value!.PptWatts);
+        Assert.Equal(92u, limitResult.Value!.PptWatts);
         Assert.Equal(60u, limitResult.Value.TdcAmps);
         Assert.Equal(90u, limitResult.Value.EdcAmps);
 
