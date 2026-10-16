@@ -94,6 +94,12 @@ internal sealed class FakeRyzenController : IRyzenController
 
     public bool CanWriteFMax => true;
 
+    public bool CanWritePptLimit => true;
+
+    public bool CanWriteTdcLimit => true;
+
+    public bool CanWriteEdcLimit => true;
+
     public bool CanReadVcore => true;
 
     public string? VcoreReadUnavailableReason => null;
@@ -116,6 +122,12 @@ internal sealed class FakeRyzenController : IRyzenController
     public List<uint> FMaxWrites { get; } = [];
 
     public int FMaxReadCount { get; private set; }
+
+    public List<uint> PptWrites { get; } = [];
+
+    public List<uint> TdcWrites { get; } = [];
+
+    public List<uint> EdcWrites { get; } = [];
 
     public OperationResult<double> GetVcoreResult { get; init; } =
         OperationResult<double>.Ok(1.225);
@@ -167,6 +179,24 @@ internal sealed class FakeRyzenController : IRyzenController
     public OperationResult SetFMax(uint megahertz)
     {
         FMaxWrites.Add(megahertz);
+        return OperationResult.Ok();
+    }
+
+    public OperationResult SetPptLimit(uint watts)
+    {
+        PptWrites.Add(watts);
+        return OperationResult.Ok();
+    }
+
+    public OperationResult SetTdcLimit(uint amps)
+    {
+        TdcWrites.Add(amps);
+        return OperationResult.Ok();
+    }
+
+    public OperationResult SetEdcLimit(uint amps)
+    {
+        EdcWrites.Add(amps);
         return OperationResult.Ok();
     }
 
