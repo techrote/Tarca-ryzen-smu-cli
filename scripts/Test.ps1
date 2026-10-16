@@ -73,7 +73,10 @@ try {
     foreach ($requiredOption in @(
             "--stream-telemetry",
             "--stream-system-telemetry",
-            "--targets")) {
+            "--targets",
+            "--get-ppt",
+            "--get-tdc",
+            "--get-edc")) {
         if ($helpText -notmatch [Regex]::Escape($requiredOption)) {
             throw "Published --help is missing '$requiredOption'."
         }
