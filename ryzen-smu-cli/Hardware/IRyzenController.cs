@@ -34,6 +34,12 @@ internal interface IRyzenController : IDisposable
 
     bool CanWriteFMax { get; }
 
+    bool CanWritePptLimit { get; }
+
+    bool CanWriteTdcLimit { get; }
+
+    bool CanWriteEdcLimit { get; }
+
     bool CanReadVcore { get; }
 
     string? VcoreReadUnavailableReason { get; }
@@ -53,6 +59,12 @@ internal interface IRyzenController : IDisposable
     OperationResult<uint> GetFMax();
 
     OperationResult SetFMax(uint megahertz);
+
+    OperationResult SetPptLimit(uint watts);
+
+    OperationResult SetTdcLimit(uint amps);
+
+    OperationResult SetEdcLimit(uint amps);
 
     OperationResult<double> GetVcore();
 

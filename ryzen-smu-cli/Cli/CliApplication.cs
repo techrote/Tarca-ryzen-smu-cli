@@ -137,6 +137,66 @@ internal static class CliApplication
         {
             Description = "Print the current PBO scalar.",
         };
+        Option<string?> setPptOption = new("--set-ppt")
+        {
+            Description =
+                $"Set the package power tracking limit in whole watts " +
+                $"({CliRequest.MinimumPowerLimitValue}-{CliRequest.MaximumPowerLimitValue} W).",
+        };
+        setPptOption.Validators.Add(result =>
+        {
+            string? rawValue = result.GetValue(setPptOption);
+            if (rawValue is not null &&
+                !TryParsePowerLimit(
+                    rawValue,
+                    "PPT",
+                    "watts",
+                    out _,
+                    out string? validationError))
+            {
+                result.AddError(validationError!);
+            }
+        });
+        Option<string?> setTdcOption = new("--set-tdc")
+        {
+            Description =
+                $"Set the sustained VDD current limit in whole amps " +
+                $"({CliRequest.MinimumPowerLimitValue}-{CliRequest.MaximumPowerLimitValue} A).",
+        };
+        setTdcOption.Validators.Add(result =>
+        {
+            string? rawValue = result.GetValue(setTdcOption);
+            if (rawValue is not null &&
+                !TryParsePowerLimit(
+                    rawValue,
+                    "TDC",
+                    "amps",
+                    out _,
+                    out string? validationError))
+            {
+                result.AddError(validationError!);
+            }
+        });
+        Option<string?> setEdcOption = new("--set-edc")
+        {
+            Description =
+                $"Set the peak VDD current limit in whole amps " +
+                $"({CliRequest.MinimumPowerLimitValue}-{CliRequest.MaximumPowerLimitValue} A).",
+        };
+        setEdcOption.Validators.Add(result =>
+        {
+            string? rawValue = result.GetValue(setEdcOption);
+            if (rawValue is not null &&
+                !TryParsePowerLimit(
+                    rawValue,
+                    "EDC",
+                    "amps",
+                    out _,
+                    out string? validationError))
+            {
+                result.AddError(validationError!);
+            }
+        });
         Option<string?> setFMaxOption = new("--set-fmax")
         {
             Description =
@@ -273,6 +333,9 @@ internal static class CliApplication
                 getEnabledCoresOption,
                 setPboScalarOption,
                 getPboScalarOption,
+                setPptOption,
+                setTdcOption,
+                setEdcOption,
                 setFMaxOption,
                 getFMaxOption,
                 getVcoreOption,
@@ -312,6 +375,10 @@ internal static class CliApplication
             bool streamSystemTelemetry =
                 WasSpecified(streamSystemTelemetryOption);
             bool diagnoseVcore = WasSpecified(diagnoseVcoreOption);
+            bool setPowerLimit =
+                WasSpecified(setPptOption) ||
+                WasSpecified(setTdcOption) ||
+                WasSpecified(setEdcOption);
             var intervalResult = result.GetResult(intervalMillisecondsOption);
             if (intervalResult is { Implicit: false } &&
                 intervalResult.Tokens.Count == 1)
@@ -417,6 +484,7 @@ internal static class CliApplication
                  WasSpecified(getEnabledCoresOption) ||
                  WasSpecified(setPboScalarOption) ||
                  WasSpecified(getPboScalarOption) ||
+                 setPowerLimit ||
                  WasSpecified(setFMaxOption) ||
                  WasSpecified(getFMaxOption) ||
                  WasSpecified(getCpuTemperatureOption) ||
@@ -436,6 +504,7 @@ internal static class CliApplication
                  WasSpecified(getEnabledCoresOption) ||
                  WasSpecified(setPboScalarOption) ||
                  WasSpecified(getPboScalarOption) ||
+                 setPowerLimit ||
                  WasSpecified(setFMaxOption) ||
                  WasSpecified(getFMaxOption) ||
                  WasSpecified(getVcoreOption) ||
@@ -457,6 +526,7 @@ internal static class CliApplication
                  WasSpecified(getEnabledCoresOption) ||
                  WasSpecified(setPboScalarOption) ||
                  WasSpecified(getPboScalarOption) ||
+                 setPowerLimit ||
                  WasSpecified(setFMaxOption) ||
                  WasSpecified(getFMaxOption) ||
                  WasSpecified(getVcoreOption) ||
@@ -478,6 +548,7 @@ internal static class CliApplication
                  WasSpecified(getEnabledCoresOption) ||
                  WasSpecified(setPboScalarOption) ||
                  WasSpecified(getPboScalarOption) ||
+                 setPowerLimit ||
                  WasSpecified(setFMaxOption) ||
                  WasSpecified(getFMaxOption) ||
                  WasSpecified(getVcoreOption) ||
@@ -505,6 +576,45 @@ internal static class CliApplication
             if (rawDisabledCores is not null)
             {
                 CoreSelection.TryParse(rawDisabledCores, out disabledCores, out _);
+            }
+
+            uint? pptWatts = null;
+            string? rawPpt = parseResult.GetValue(setPptOption);
+            if (rawPpt is not null &&
+                TryParsePowerLimit(
+                    rawPpt,
+                    "PPT",
+                    "watts",
+                    out uint parsedPpt,
+                    out _))
+            {
+                pptWatts = parsedPpt;
+            }
+
+            uint? tdcAmps = null;
+            string? rawTdc = parseResult.GetValue(setTdcOption);
+            if (rawTdc is not null &&
+                TryParsePowerLimit(
+                    rawTdc,
+                    "TDC",
+                    "amps",
+                    out uint parsedTdc,
+                    out _))
+            {
+                tdcAmps = parsedTdc;
+            }
+
+            uint? edcAmps = null;
+            string? rawEdc = parseResult.GetValue(setEdcOption);
+            if (rawEdc is not null &&
+                TryParsePowerLimit(
+                    rawEdc,
+                    "EDC",
+                    "amps",
+                    out uint parsedEdc,
+                    out _))
+            {
+                edcAmps = parsedEdc;
             }
 
             FMaxFrequency? fMax = null;
@@ -580,6 +690,9 @@ internal static class CliApplication
                 vcoreStreamIntervalMilliseconds,
                 parseResult.GetValue(infoOption))
             {
+                PptWatts = pptWatts,
+                TdcAmps = tdcAmps,
+                EdcAmps = edcAmps,
                 DiagnoseVcore = parseResult.GetValue(diagnoseVcoreOption),
                 GetCpuTemperature =
                     parseResult.GetValue(getCpuTemperatureOption),
@@ -620,5 +733,30 @@ internal static class CliApplication
         });
 
         return rootCommand;
+    }
+
+    private static bool TryParsePowerLimit(
+        string rawValue,
+        string limitName,
+        string unitName,
+        out uint value,
+        out string? error)
+    {
+        if (uint.TryParse(
+                rawValue,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out value) &&
+            value is >= CliRequest.MinimumPowerLimitValue and <= CliRequest.MaximumPowerLimitValue)
+        {
+            error = null;
+            return true;
+        }
+
+        value = 0;
+        error =
+            $"{limitName} must be a whole number from " +
+            $"{CliRequest.MinimumPowerLimitValue} through {CliRequest.MaximumPowerLimitValue} {unitName}.";
+        return false;
     }
 }
