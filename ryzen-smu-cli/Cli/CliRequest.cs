@@ -15,6 +15,9 @@ internal sealed record CliRequest(
     int? VcoreStreamIntervalMilliseconds,
     bool ShowInfo)
 {
+    public const uint MinimumPowerLimitValue = 1;
+    public const uint MaximumPowerLimitValue = 500;
+
     public bool StreamVcore => VcoreStreamIntervalMilliseconds.HasValue;
 
     public uint? PptWatts { get; init; }
