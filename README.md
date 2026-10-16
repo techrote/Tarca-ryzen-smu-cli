@@ -73,10 +73,17 @@ Open an Administrator PowerShell in the extracted release directory:
 
 Start with reads. Review the enabled-core mapping before setting offsets or
 changing core-disable masks. Power-limit writes are runtime SMU operations and
-do not persist as BIOS configuration. Tarca's initial power-limit target is
-Vermeer / Ryzen 5000 desktop, including the Ryzen 5 5600X; this software path
-still requires physical hardware qualification before it is described as
-verified on a specific CPU/motherboard combination.
+do not persist as BIOS configuration.
+
+Tarca's `--set-ppt` path is physically qualified on one Ryzen 5 5600X /
+Vermeer system: Gigabyte B450 AORUS PRO-CF, BIOS F63d, SMU 56.70.0, PM table
+`0x00380905` / `0x5D0`. PPT requests through 84 W were exercised; testing
+above 84 W was intentionally stopped for thermal reasons. HWiNFO package-power
+telemetry was observed at approximately 2 W above the requested setpoint under
+load. That observation is live power telemetry, **not** direct configured-PPT
+readback and must not be treated as a correction factor. TDC and EDC writes
+remain physically unqualified. See
+[the hardware qualification record](docs/hardware/VERMEER-5600X-B450-AORUS-PRO-PPT.md).
 
 ## Build from source
 
@@ -524,6 +531,7 @@ native-component details.
 
 Additional documentation:
 
+- [Vermeer Ryzen 5 5600X PPT hardware qualification](docs/hardware/VERMEER-5600X-B450-AORUS-PRO-PPT.md)
 - [Changelog](CHANGELOG.md)
 - [Installation](docs/INSTALLATION.md)
 - [Architecture](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/ARCHITECTURE.md)
